@@ -3,6 +3,7 @@
     "version": "19.0.1.0.0",
     "category": "Authentication",
     "summary": "Keycloak OIDC SSO for PolyON Platform",
+    "author": "Triangle.s",
     "depends": ["base", "web"],
     "data": [],
     "installable": True,

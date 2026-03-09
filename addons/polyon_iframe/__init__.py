@@ -1,2 +1,1 @@
-from . import monkeypatch
-
+from .monkeypatch import polyon_iframe_post_load

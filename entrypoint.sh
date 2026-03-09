@@ -57,5 +57,5 @@ odoo_initial_modules="base,polyon_s3_attachment,polyon_oidc,polyon_iframe"
 python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
 
 echo "Odoo를 기동합니다..."
-exec python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH"
+exec python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -d "${DB_NAME:-polyon_odoo}"
 

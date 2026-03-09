@@ -7,7 +7,7 @@
 
 ## 1. 목적
 
-Odoo 18 Community Edition을 **PolyON Platform(PP) 모듈**로 패키징하여,  
+Odoo 19 Community Edition을 **PolyON Platform(PP) 모듈**로 패키징하여,  
 Console에서 "설치" 버튼 한 번으로 **PRC가 모든 인프라 자원을 자동 프로비저닝**하고  
 Odoo가 완전히 기동되는 것을 검증한다.
 
@@ -146,7 +146,7 @@ spec:
       - name: http
         containerPort: 8069
     health:
-      path: /web/health       # Odoo 18 health endpoint
+      path: /web/health       # Odoo 19 health endpoint
       port: 8069
     resources:
       requests: { cpu: 200m, memory: 512Mi }
@@ -212,7 +212,7 @@ spec:
 
 | 항목 | 요구사항 |
 |------|---------|
-| 베이스 | Odoo 18 공식 Docker 이미지 기반 (`odoo:18`) |
+| 베이스 | Odoo 19 공식 Docker 이미지 기반 (`odoo:19`) |
 | 플랫폼 | `linux/amd64` + `linux/arm64` |
 | 매니페스트 | `/polyon-module/module.yaml` COPY 필수 |
 | 이미지 태그 | `jupitertriangles/polyon-odoo:v{semver}` |
@@ -341,7 +341,7 @@ PP 환경에서는 **RustFS(S3)에 저장**해야 한다.
 Odoo 멀티 워커 모드에서 세션 공유를 위해 Redis 사용.
 
 ### 방법
-- Odoo 18 내장 Redis 세션 지원 없음 → `session_redis` OCA 모듈 사용
+- Odoo 19 내장 Redis 세션 지원 없음 → `session_redis` OCA 모듈 사용
 - 또는 `REDIS_URL` 환경변수 → odoo.conf에 redis 설정 주입
 
 ### odoo.conf 추가
@@ -429,7 +429,7 @@ portal:
 
 | 항목 | 제약 |
 |------|------|
-| Odoo 버전 | 18.0 Community Edition |
+| Odoo 버전 | 19.0 Community Edition |
 | Python | 3.12+ (Ubuntu Noble 기반) |
 | DB | PostgreSQL 17 (PRC 프로비저닝) |
 | 이미지 크기 | 1GB 이하 권장 (Odoo 특성상 50MB 불가) |

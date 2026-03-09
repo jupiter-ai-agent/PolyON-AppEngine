@@ -1,10 +1,10 @@
 # PolyON-Odoo (PP Odoo)
 
-PolyON Platform용 Odoo 18 모듈 — PRC(Platform Resource Claim) 기반 완전 자동 프로비저닝.
+PolyON Platform용 Odoo 19 모듈 — PRC(Platform Resource Claim) 기반 완전 자동 프로비저닝.
 
 ## 개요
 
-Odoo 18 Community Edition을 PolyON Platform 모듈로 패키징.  
+Odoo 19 Community Edition을 PolyON Platform 모듈로 패키징.  
 설치 버튼 한 번으로 DB, S3, LDAP, SMTP, Redis가 자동 프로비저닝되고 Odoo가 기동된다.
 
 ## 참조 문서

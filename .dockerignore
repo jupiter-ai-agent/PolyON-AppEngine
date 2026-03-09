@@ -1,0 +1,13 @@
+.git
+.gitignore
+__pycache__/
+*.py[cod]
+*.log
+node_modules/
+dist/
+build/
+venv/
+.venv/
+terminals/
+agent-transcripts/
+

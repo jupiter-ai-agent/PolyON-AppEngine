@@ -1,0 +1,49 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:17
+    container_name: polyon-odoo-db
+    environment:
+      POSTGRES_DB: polyon_odoo
+      POSTGRES_USER: mod_odoo
+      POSTGRES_PASSWORD: mod_odoo_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  odoo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: polyon-odoo
+    depends_on:
+      - db
+    environment:
+      # 데이터베이스 연결 (PRC 환경변수 시뮬레이션)
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: polyon_odoo
+      DB_USER: mod_odoo
+      DB_PASSWORD: mod_odoo_password
+      # Odoo 설정
+      ODOO_ADMIN_PASSWORD: admin
+      ODOO_DB_FILTER: "^polyon_odoo$"
+      ODOO_LIST_DB: "false"
+      ODOO_PROXY_MODE: "true"
+      ODOO_WORKERS: "2"
+      # SMTP 기본값 (로컬 개발용)
+      SMTP_HOST: "localhost"
+      SMTP_PORT: "587"
+      SMTP_USER: ""
+      SMTP_PASSWORD: ""
+    ports:
+      - "8069:8069"
+    volumes:
+      - odoo_data:/var/lib/odoo
+
+volumes:
+  db_data:
+  odoo_data:
+

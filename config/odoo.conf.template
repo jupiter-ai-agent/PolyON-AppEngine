@@ -1,0 +1,32 @@
+[options]
+; Database
+db_host = ${DB_HOST}
+db_port = ${DB_PORT}
+db_user = ${DB_USER}
+db_password = ${DB_PASSWORD}
+db_name = ${DB_NAME}
+dbfilter = ${ODOO_DB_FILTER}
+list_db = ${ODOO_LIST_DB}
+
+; Security
+admin_passwd = ${ODOO_ADMIN_PASSWORD}
+proxy_mode = ${ODOO_PROXY_MODE}
+
+; Workers
+workers = ${ODOO_WORKERS}
+
+; Redis Session (선택)
+session_redis_host = ${SESSION_REDIS_HOST}
+session_redis_port = ${SESSION_REDIS_PORT}
+session_redis_dbindex = ${SESSION_REDIS_DBINDEX}
+
+; SMTP
+smtp_server = ${SMTP_HOST}
+smtp_port = ${SMTP_PORT}
+smtp_user = ${SMTP_USER}
+smtp_password = ${SMTP_PASSWORD}
+smtp_ssl = True
+
+; Addons
+addons_path = /opt/odoo/addons,/opt/odoo/addons-custom
+

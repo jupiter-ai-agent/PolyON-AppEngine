@@ -5,22 +5,36 @@ PolyON Platform용 Odoo 19 모듈 — PRC(Platform Resource Claim) 기반 완전
 ## 개요
 
 Odoo 19 Community Edition을 PolyON Platform 모듈로 패키징.  
-설치 버튼 한 번으로 DB, S3, LDAP, SMTP, Redis가 자동 프로비저닝되고 Odoo가 기동된다.
+Console에서 설치 버튼 한 번으로 DB, S3, LDAP, SMTP, Redis가 자동 프로비저닝되고 Odoo가 기동된다.
 
-## 참조 문서
+## PRC Claims (5개)
 
-| 문서 | 위치 | 설명 |
-|------|------|------|
-| **PP 플랫폼 규격** | [PolyON-platform](https://github.com/jupiter-ai-agent/PolyON-platform) | 전체 플랫폼 규약 |
-| **PRC Provider Reference** | [prc-provider-reference.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/prc-provider-reference.md) | 8개 Provider 상세 명세 |
-| **Module Spec** | [module-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-spec.md) | module.yaml 작성 규격 |
-| **Module UI Spec** | [module-ui-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-ui-spec.md) | Console/Portal UI 통합 |
-| **Module Lifecycle** | [module-lifecycle-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-lifecycle-spec.md) | 설치/삭제 라이프사이클 |
-| **참고 구현 (PP Drive)** | [PolyON-Drive](https://github.com/jupiter-ai-agent/PolyON-Drive) | PRC 검증 완료된 샘플 모듈 |
+| Claim | Foundation | 용도 |
+|-------|-----------|------|
+| database | PostgreSQL | Odoo 핵심 DB |
+| objectStorage | RustFS (S3) | ir.attachment 파일 저장 |
+| directory | Samba AD DC | 사원 LDAP 인증 |
+| smtp | Stalwart Mail | 이메일 발송 |
+| cache | Redis | 세션 스토어 |
 
-## 요구사항
+## 문서
 
-[REQUIREMENTS.md](./REQUIREMENTS.md) 참조.
+| 문서 | 설명 |
+|------|------|
+| [REQUIREMENTS.md](./REQUIREMENTS.md) | **요구사항 정의서** (12개 섹션) — 구현의 기준 |
+| [QA.md](./QA.md) | 구현 전 Q&A 답변 |
+| [polyon-module/module.yaml](./polyon-module/module.yaml) | PP 모듈 매니페스트 (PRC claims 포함) |
+
+## 참조
+
+| 문서 | 위치 |
+|------|------|
+| PP 플랫폼 규격 | [PolyON-platform](https://github.com/jupiter-ai-agent/PolyON-platform) |
+| PRC Provider Reference | [prc-provider-reference.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/prc-provider-reference.md) |
+| Module Spec | [module-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-spec.md) |
+| Module Lifecycle | [module-lifecycle-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-lifecycle-spec.md) |
+| Module UI Spec | [module-ui-spec.md](https://github.com/jupiter-ai-agent/PolyON-platform/blob/main/docs/module-ui-spec.md) |
+| 참고 구현 (PP Drive) | [PolyON-Drive](https://github.com/jupiter-ai-agent/PolyON-Drive) |
 
 ## 프로젝트 구조 (완성 시)
 
@@ -36,7 +50,24 @@ PolyON-Odoo/
 ├── config/
 │   └── odoo.conf.template      # 환경변수 치환용 템플릿
 ├── entrypoint.sh               # PRC env → odoo.conf + addon 자동 설치
-├── Dockerfile                  # Odoo 19.0 소스 빌드 (공식 이미지 사용 금지)
+├── Dockerfile                  # Odoo 19.0 소스 빌드 (⛔ 공식 이미지 사용 금지)
 ├── .dockerignore
+├── REQUIREMENTS.md             # 요구사항 정의서
+├── QA.md                       # Q&A 답변
 └── README.md
 ```
+
+## 빌드 규칙
+
+- **⛔ 공식 이미지 pull 금지** — 소스 빌드 원칙
+- 소스: `https://github.com/odoo/odoo.git` (19.0 브랜치)
+- 플랫폼: `linux/amd64` + `linux/arm64`
+- 이미지: `jupitertriangles/polyon-odoo:v{semver}`
+
+## 검증 Phase
+
+| Phase | 목표 | 상태 |
+|-------|------|------|
+| Phase 1 | PRC 자동 설치 → `/web/health` 200 OK | 미착수 |
+| Phase 2 | LDAP + S3 + SMTP + Redis 연동 | 미착수 |
+| Phase 3 | Console/Portal iframe 통합 | 미착수 |

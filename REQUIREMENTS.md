@@ -600,12 +600,81 @@ class ResUsers(models.Model):
 - S3 미설정 시 기본 filestore fallback
 - `ir.config_parameter`에 PRC env 자동 저장
 
-### 10.3 `polyon_iframe` — iframe 임베딩
+### 10.3 `polyon_iframe` — iframe 임베딩 + PP Module SDK ★수정 필요★
 
-**이미 구현 완료 (commits `d4cf25a`, `bc4c8ea`).** 변경 없음.
+**기존 구현에 PP Module SDK 통신 추가 필요.**
 
-- `X-Frame-Options` 헤더 제거
-- `session_id` 쿠키에 `SameSite=None; Secure` 추가
+현재:
+- `X-Frame-Options` 헤더 제거 ✅
+- `session_id` 쿠키에 `SameSite=None; Secure` 추가 ✅
+
+**추가 필요: `polyon:ready` postMessage 발송**
+
+Console/Portal의 `ModuleSector` 컴포넌트는 iframe이 로드되면 `polyon:ready` 메시지를 기다린다.
+5초 내에 수신하지 못하면 **"모듈 응답 시간 초과"** 에러를 표시한다.
+
+Odoo의 모든 페이지(`/web` 등)에 아래 스크립트를 주입해야 한다:
+
+```javascript
+// PP Module SDK — polyon:ready 발송
+(function() {
+  if (window.parent === window) return; // iframe이 아니면 무시
+  window.parent.postMessage({ type: 'polyon:ready', moduleId: 'odoo' }, '*');
+  
+  // polyon:init 수신 대기 (JWT 토큰 등)
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'polyon:init') {
+      // Console/Portal에서 전달한 JWT 토큰, 테마 등
+      console.log('PolyON init received:', event.data);
+    }
+  });
+})();
+```
+
+**구현 방법:**
+Odoo의 web 응답에 위 스크립트를 주입하는 방법:
+
+**방법 A (추천): monkeypatch.py에서 응답 body에 스크립트 주입**
+```python
+# monkeypatch.py에 추가
+POLYON_SDK_SCRIPT = """
+<script>
+(function() {
+  if (window.parent === window) return;
+  window.parent.postMessage({ type: 'polyon:ready', moduleId: 'odoo' }, '*');
+  window.addEventListener('message', function(event) {
+    if (event.data && event.data.type === 'polyon:init') {
+      console.log('PolyON init:', event.data);
+    }
+  });
+})();
+</script>
+"""
+
+# patched_get_response 안에서 HTML 응답일 때 </body> 앞에 삽입
+if 'text/html' in response.content_type:
+    data = response.get_data(as_text=True)
+    if '</body>' in data:
+        data = data.replace('</body>', POLYON_SDK_SCRIPT + '</body>')
+        response.set_data(data)
+```
+
+**방법 B: Odoo QWeb 템플릿 상속으로 스크립트 추가**
+```xml
+<!-- views/polyon_iframe_templates.xml -->
+<template id="polyon_sdk_script" inherit_id="web.layout" name="PolyON SDK">
+    <xpath expr="//head" position="inside">
+        <script>
+            (function() {
+              if (window.parent === window) return;
+              window.parent.postMessage({ type: 'polyon:ready', moduleId: 'odoo' }, '*');
+            })();
+        </script>
+    </xpath>
+</template>
+```
+
+방법 B가 Odoo 방식에 더 자연스럽다. `__manifest__.py`의 `data`에 XML 파일 추가 필요.
 
 ---
 

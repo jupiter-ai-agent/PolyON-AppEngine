@@ -27,13 +27,16 @@ Odoo 19 Community Edition을 PolyON Platform 모듈로 패키징.
 ```
 PolyON-Odoo/
 ├── polyon-module/
-│   └── module.yaml          # PP 모듈 매니페스트 (PRC claims 포함)
-├── config/
-│   └── odoo.conf.template   # 환경변수 치환용 템플릿
+│   └── module.yaml              # PP 모듈 매니페스트 (PRC 5 claims)
 ├── addons/
-│   └── polyon_theme/        # (선택) PP 테마 커스텀 모듈
-├── entrypoint.sh            # PRC 환경변수 → odoo.conf 변환 + 기동
-├── Dockerfile               # 소스 빌드, linux/amd64 + arm64
+│   ├── polyon_s3_attachment/    # ir.attachment → RustFS S3 저장
+│   ├── polyon_ldap_auto/       # PRC env → LDAP provider 자동 등록
+│   ├── polyon_redis_session/   # Redis 세션 스토어
+│   └── polyon_iframe/          # X-Frame-Options 제거, CSP 조정
+├── config/
+│   └── odoo.conf.template      # 환경변수 치환용 템플릿
+├── entrypoint.sh               # PRC env → odoo.conf + addon 자동 설치
+├── Dockerfile                  # Odoo 19.0 소스 빌드 (공식 이미지 사용 금지)
 ├── .dockerignore
 └── README.md
 ```

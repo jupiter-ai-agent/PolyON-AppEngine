@@ -212,14 +212,76 @@ spec:
 
 | 항목 | 요구사항 |
 |------|---------|
-| 베이스 | Odoo 19 공식 Docker 이미지 기반 (`odoo:19`) |
+| **소스** | `https://github.com/odoo/odoo.git` (19.0 브랜치) — 소스 clone 후 커스텀 빌드 |
 | 플랫폼 | `linux/amd64` + `linux/arm64` |
 | 매니페스트 | `/polyon-module/module.yaml` COPY 필수 |
 | 이미지 태그 | `jupitertriangles/polyon-odoo:v{semver}` |
 
-> **참고**: 보스 원칙에 따르면 Odoo는 "소스 빌드 원칙" 대상이나,  
-> PRC 검증이 목적이므로 **공식 이미지 기반 커스텀**을 1차 목표로 한다.  
-> 소스 빌드 전환은 추후 결정.
+> **⛔ 공식 이미지 pull 금지** — PP 원칙: 커스터마이징 필요한 엔진은 소스 빌드 원칙.  
+> Odoo는 S3 attachment, LDAP 자동설정, Redis 세션, iframe 허용 등  
+> 소스 레벨 제어가 필수이므로 반드시 소스에서 빌드한다.
+
+### 5.1.1 소스 빌드가 필요한 이유
+
+| 커스텀 항목 | 이유 |
+|------------|------|
+| S3 Attachment | `ir.attachment` 저장 로직을 RustFS(S3)로 변경 — 소스 패치 or 커스텀 addon |
+| LDAP 자동 설정 | `auth_ldap` 모듈의 Company LDAP provider 자동 등록 — init 스크립트 + 커스텀 addon |
+| Redis 세션 | 멀티 워커 세션 공유 — `session_redis` 통합 또는 소스 패치 |
+| X-Frame-Options | iframe 임베딩을 위해 보안 헤더 제거/조정 — 소스 패치 |
+| PRC 환경변수 자동 적용 | 기동 시 환경변수 → DB 설정 자동 주입 — 커스텀 addon |
+
+### 5.1.2 프로젝트 구조
+
+```
+PolyON-Odoo/
+├── polyon-module/
+│   └── module.yaml              # PP 모듈 매니페스트
+├── addons/
+│   ├── polyon_s3_attachment/     # ir.attachment → RustFS S3 저장
+│   ├── polyon_ldap_auto/        # PRC env → LDAP provider 자동 등록
+│   ├── polyon_redis_session/    # Redis 세션 스토어
+│   └── polyon_iframe/           # X-Frame-Options 제거, CSP 조정
+├── config/
+│   └── odoo.conf.template       # 환경변수 치환용 템플릿
+├── entrypoint.sh                # PRC env → odoo.conf + 커스텀 addon 자동 설치
+├── Dockerfile                   # Odoo 19.0 소스 빌드
+├── .dockerignore
+└── README.md
+```
+
+### 5.1.3 Dockerfile 구조 (소스 빌드)
+
+```dockerfile
+# Stage 1: Odoo 소스
+FROM python:3.12-slim AS base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git postgresql-client libpq-dev libxml2-dev libxslt1-dev \
+    libldap2-dev libsasl2-dev node-less npm wkhtmltopdf \
+    && rm -rf /var/lib/apt/lists/*
+
+# Odoo 19.0 소스 clone
+RUN git clone --depth 1 --branch 19.0 https://github.com/odoo/odoo.git /opt/odoo
+
+# Python 의존성
+RUN pip install --no-cache-dir -r /opt/odoo/requirements.txt \
+    && pip install --no-cache-dir boto3 redis
+
+# 커스텀 addons 복사
+COPY addons/ /opt/odoo/addons-custom/
+
+# PP 모듈 매니페스트
+COPY polyon-module/ /polyon-module/
+
+# entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 8069 8072
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["odoo"]
+```
 
 ### 5.2 entrypoint.sh 핵심 로직
 

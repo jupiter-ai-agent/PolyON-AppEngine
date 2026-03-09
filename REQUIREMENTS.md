@@ -65,21 +65,12 @@ env:
   AWS_SECRET_ACCESS_KEY: "{{ claims.objectStorage.secretKey }}"
 ```
 
-### 3.3 directory (Samba AD DC / LDAP)
+### 3.3 ~~directory (Samba AD DC / LDAP)~~ → **삭제**
 
-| 항목 | 값 |
-|------|---|
-| config.ou | `odoo` |
-| 용도 | 사원 LDAP 인증 연동 |
-
-```yaml
-env:
-  LDAP_SERVER: "{{ claims.directory.host }}"
-  LDAP_PORT: "{{ claims.directory.port }}"
-  LDAP_BIND_DN: "{{ claims.directory.bindDN }}"
-  LDAP_BIND_PASSWORD: "{{ claims.directory.bindPassword }}"
-  LDAP_BASE_DN: "{{ claims.directory.baseDN }}"
-```
+> ⛔ **PP 제1원칙: 모든 서비스는 Keycloak SSO를 통해 인증한다.**  
+> Odoo가 직접 LDAP 인증하면 Keycloak을 우회하게 된다.  
+> 사원 인증은 **Keycloak OIDC**를 통해 처리한다.  
+> directory claim은 삭제.
 
 ### 3.4 smtp (Stalwart Mail)
 
@@ -96,17 +87,12 @@ env:
   SMTP_PASSWORD: "{{ claims.smtp.password }}"
 ```
 
-### 3.5 cache (Redis)
+### 3.5 ~~cache (Redis)~~ → **삭제**
 
-| 항목 | 값 |
-|------|---|
-| config.db | `auto` |
-| 용도 | Odoo 세션 스토어 / 캐시 |
-
-```yaml
-env:
-  REDIS_URL: "{{ claims.cache.url }}"
-```
+> ⛔ **PP에서 세션 관리는 Keycloak SSO가 담당한다.**  
+> Odoo 자체 세션을 Redis로 관리할 필요 없다.  
+> SSO 토큰 기반 인증이므로 Odoo 세션 쿠키 의존도 최소화.  
+> cache claim은 삭제.
 
 ---
 
@@ -135,9 +121,6 @@ spec:
   requires:                   # Foundation 의존성
     - id: postgresql
     - id: rustfs
-    - id: samba-dc
-    - id: stalwart
-    - id: redis
 
   resources:
     image: jupitertriangles/polyon-odoo:v0.1.0
@@ -159,13 +142,10 @@ spec:
     - type: objectStorage
       config:
         bucket: odoo
-    - type: directory
-      config:
-        ou: odoo
     - type: smtp
       config:
         domain: odoo
-    - type: cache
+    # ⛔ directory, cache 삭제 — PP 제1원칙: 인증은 Keycloak SSO
 
   env:
     # Database (PRC 자동 주입)
@@ -179,19 +159,14 @@ spec:
     AWS_BUCKET_NAME: "{{ claims.objectStorage.bucket }}"
     AWS_ACCESS_KEY_ID: "{{ claims.objectStorage.accessKey }}"
     AWS_SECRET_ACCESS_KEY: "{{ claims.objectStorage.secretKey }}"
-    # LDAP
-    LDAP_SERVER: "{{ claims.directory.host }}"
-    LDAP_PORT: "{{ claims.directory.port }}"
-    LDAP_BIND_DN: "{{ claims.directory.bindDN }}"
-    LDAP_BIND_PASSWORD: "{{ claims.directory.bindPassword }}"
-    LDAP_BASE_DN: "{{ claims.directory.baseDN }}"
     # SMTP
     SMTP_HOST: "{{ claims.smtp.host }}"
     SMTP_PORT: "{{ claims.smtp.port }}"
     SMTP_USER: "{{ claims.smtp.user }}"
     SMTP_PASSWORD: "{{ claims.smtp.password }}"
-    # Redis
-    REDIS_URL: "{{ claims.cache.url }}"
+    # Keycloak SSO (PP 제1원칙)
+    OIDC_ISSUER: "https://auth.{{ baseDomain }}/realms/polyon"
+    OIDC_CLIENT_ID: "odoo"
     # Odoo 설정 (정적)
     ODOO_ADMIN_PASSWORD: "admin"   # 마스터 비밀번호 (DB 관리용)
     ODOO_DB_FILTER: "^polyon_odoo$"
@@ -225,9 +200,9 @@ spec:
 
 | 커스텀 항목 | 이유 |
 |------------|------|
-| S3 Attachment | `ir.attachment` 저장 로직을 RustFS(S3)로 변경 — 소스 패치 or 커스텀 addon |
-| LDAP 자동 설정 | `auth_ldap` 모듈의 Company LDAP provider 자동 등록 — init 스크립트 + 커스텀 addon |
-| Redis 세션 | 멀티 워커 세션 공유 — `session_redis` 통합 또는 소스 패치 |
+| S3 Attachment | `ir.attachment` 저장 로직을 RustFS(S3)로 변경 — 커스텀 addon |
+| Keycloak OIDC SSO | PP 제1원칙: 자체 로그인 화면 제거, JWT 기반 자동 인증 — 커스텀 addon |
+| X-Frame-Options 제거 | Console/Portal iframe 임베딩 — 커스텀 addon |
 | X-Frame-Options | iframe 임베딩을 위해 보안 헤더 제거/조정 — 소스 패치 |
 | PRC 환경변수 자동 적용 | 기동 시 환경변수 → DB 설정 자동 주입 — 커스텀 addon |
 
@@ -239,9 +214,8 @@ PolyON-Odoo/
 │   └── module.yaml              # PP 모듈 매니페스트
 ├── addons/
 │   ├── polyon_s3_attachment/     # ir.attachment → RustFS S3 저장
-│   ├── polyon_ldap_auto/        # PRC env → LDAP provider 자동 등록
-│   ├── polyon_redis_session/    # Redis 세션 스토어
-│   └── polyon_iframe/           # X-Frame-Options 제거, CSP 조정
+│   ├── polyon_oidc/             # Keycloak OIDC SSO 인증 (PP 제1원칙)
+│   └── polyon_iframe/           # X-Frame-Options 제거, SameSite 쿠키
 ├── config/
 │   └── odoo.conf.template       # 환경변수 치환용 템플릿
 ├── entrypoint.sh                # PRC env → odoo.conf + 커스텀 addon 자동 설치
@@ -345,29 +319,61 @@ exec odoo --config=/etc/odoo/odoo.conf "$@"
 
 ---
 
-## 6. LDAP 연동
+## 6. 인증: Keycloak OIDC SSO (PP 제1원칙)
 
-Odoo `auth_ldap` 모듈을 통해 AD 사원 인증 연동.
+> ⛔ **Odoo가 직접 LDAP 인증하는 것은 PP 원칙 위반이다.**  
+> PP의 모든 서비스는 Keycloak을 통해 SSO로 인증한다.
 
-### 요구사항
+### 6.1 PP 인증 아키텍처
 
-- Odoo 기동 후 `auth_ldap` 모듈 자동 설치 (`-i auth_ldap` 또는 XML 데이터)
-- LDAP 설정을 DB에 자동 주입 (entrypoint 또는 init 스크립트):
+```
+사용자 → Portal (Keycloak OIDC 로그인, polyon realm)
+  └→ Portal이 JWT 토큰 보유
+    └→ iframe으로 Odoo 표시
+      └→ Odoo는 Keycloak JWT를 검증하여 사용자 식별
+```
 
-| Odoo 필드 | PRC 환경변수 | 값 |
-|-----------|-------------|---|
-| ldap_server | `LDAP_SERVER` | `polyon-dc` |
-| ldap_server_port | `LDAP_PORT` | `389` |
-| ldap_binddn | `LDAP_BIND_DN` | `CN=svc-odoo,OU=odoo,DC=cmars,DC=com` |
-| ldap_password | `LDAP_BIND_PASSWORD` | (PRC 자동 생성) |
-| ldap_base | `LDAP_BASE_DN` | `DC=cmars,DC=com` |
-| ldap_filter | — | `(&(objectClass=user)(sAMAccountName=%s))` |
-| ldap_tls | — | `false` (내부망) |
+**Odoo 자체 로그인 화면을 사용자에게 보여주면 안 된다.**  
+Portal에서 이미 Keycloak으로 로그인한 상태에서 iframe에 Odoo가 표시된다.
 
-### 주의사항
-- Odoo LDAP는 **Company(회사)** 단위로 설정됨
-- 기본 Company ("My Company")에 LDAP provider 자동 등록 필요
-- `create_user` = True — LDAP 인증 성공 시 Odoo 사용자 자동 생성
+### 6.2 구현 방식: `polyon_oidc` 커스텀 addon
+
+`auth_ldap` 모듈 대신 **`polyon_oidc`** 커스텀 addon을 만든다.
+
+**동작 흐름:**
+1. Portal/Console이 iframe에 Odoo를 로드할 때, JWT 토큰을 전달 (postMessage 또는 query param 또는 header)
+2. `polyon_oidc` addon이 JWT를 검증
+3. JWT의 `preferred_username` (= AD sAMAccountName)으로 Odoo 사용자 매칭/자동 생성
+4. Odoo 세션 생성 (로그인 화면 스킵)
+
+**환경변수:**
+```yaml
+env:
+  OIDC_ISSUER: "https://auth.cmars.com/realms/polyon"
+  OIDC_CLIENT_ID: "odoo"    # Keycloak에 등록할 클라이언트
+```
+
+### 6.3 Keycloak 클라이언트 설정
+
+Keycloak `polyon` realm에 `odoo` 클라이언트 등록 필요:
+
+| 항목 | 값 |
+|------|---|
+| Client ID | `odoo` |
+| Client Protocol | openid-connect |
+| Access Type | public (PKCE) |
+| Valid Redirect URIs | `https://odoo.cmars.com/*` |
+| Web Origins | `https://console.cmars.com`, `https://portal.cmars.com` |
+
+### 6.4 삭제할 것
+
+- **`polyon_ldap_auto` addon** → 삭제 (LDAP 직접 인증 = Keycloak 우회)
+- **`polyon_redis_session` addon** → 삭제 (SSO 기반이므로 Odoo 자체 세션 관리 불필요)
+- **`auth_ldap` 모듈 의존성** → 제거 (entrypoint의 `-i auth_ldap` 제거)
+- **directory claim** → module.yaml에서 삭제
+- **cache claim** → module.yaml에서 삭제
+- **LDAP_* 환경변수** → module.yaml env에서 삭제
+- **REDIS_URL 환경변수** → module.yaml env에서 삭제
 
 ---
 
@@ -398,24 +404,11 @@ PP 환경에서는 **RustFS(S3)에 저장**해야 한다.
 
 ---
 
-## 8. Redis 세션 스토어
+## 8. ~~Redis 세션 스토어~~ → 삭제
 
-Odoo 멀티 워커 모드에서 세션 공유를 위해 Redis 사용.
-
-### 방법
-- Odoo 19 내장 Redis 세션 지원 없음 → `session_redis` OCA 모듈 사용
-- 또는 `REDIS_URL` 환경변수 → odoo.conf에 redis 설정 주입
-
-### odoo.conf 추가
-
-```ini
-; Redis Session
-session_redis_host = (REDIS_URL에서 추출)
-session_redis_port = 6379
-session_redis_dbindex = (PRC 자동 할당)
-```
-
-> Redis 세션이 복잡하면 Phase 2로 미룰 수 있음. PRC claim은 선언하되 실제 연동은 선택.
+> ⛔ **PP에서 세션 관리는 Keycloak SSO가 담당한다.**  
+> Odoo 자체 세션을 Redis로 관리하는 구조는 PP 아키텍처와 맞지 않는다.  
+> 이 섹션은 삭제. `polyon_redis_session` addon도 삭제 대상.
 
 ---
 
@@ -457,33 +450,29 @@ portal:
 
 ## 10. 검증 기준 (Definition of Done)
 
-### Phase 1: PRC 자동 설치 (필수)
+### Phase 1: PRC 자동 설치 + 기동 (필수)
 
 - [ ] `module.yaml`이 PRC Provider Reference 규격에 맞게 작성됨
-- [ ] Docker 이미지 빌드 성공 (`linux/amd64` + `arm64`)
+- [ ] Docker 이미지 빌드 성공
 - [ ] `/polyon-module/module.yaml` 이미지 내 존재
-- [ ] Console에서 "PP Odoo" 설치 버튼 → PRC 5개 claim 자동 프로비저닝
+- [ ] Console에서 "PP Odoo" 설치 버튼 → PRC 3개 claim 자동 프로비저닝
   - [ ] PostgreSQL: `polyon_odoo` DB + `mod_odoo` 유저 생성
   - [ ] RustFS: `odoo` 버킷 생성
-  - [ ] Samba DC: `svc-odoo` 서비스 계정 생성
   - [ ] Stalwart: SMTP 계정 생성
-  - [ ] Redis: DB 번호 자동 할당
 - [ ] Odoo Pod 정상 기동 (`/web/health` 200 OK)
-- [ ] `https://odoo.cmars.com` 접속 시 Odoo 로그인 화면 표시
 - [ ] 삭제 → 재설치 시 동일하게 자동 동작 (멱등성)
 
-### Phase 2: 서비스 연동 (권장)
+### Phase 2: SSO + 서비스 연동 (필수)
 
-- [ ] LDAP 인증: AD 사원 계정으로 Odoo 로그인 성공
+- [ ] **Keycloak OIDC SSO**: Portal 로그인 → iframe Odoo 자동 인증 (로그인 화면 없음)
 - [ ] S3 Attachment: 파일 업로드 시 RustFS 버킷에 저장
 - [ ] SMTP: Odoo에서 이메일 발송 동작
-- [ ] Redis: 멀티 워커 세션 공유
+- [ ] Console/Portal iframe 정상 표시
 
 ### Phase 3: 완성도 (선택)
 
-- [ ] Console iframe에서 Odoo Admin 표시
-- [ ] Portal iframe에서 Odoo 사원 UI 표시
 - [ ] PP 테마 커스텀 (로고, 색상)
+- [ ] ERP/HR/재고 등 서브메뉴 분리
 
 ---
 
@@ -514,21 +503,15 @@ Phase 1에서는 DB만으로 Odoo가 정상 기동되어야 한다.
 
 | 서비스 | env 비어있을 때 | 처리 방법 |
 |--------|----------------|----------|
-| **Redis** | `SESSION_REDIS_HOST` 비어있음 | `odoo.conf`에서 `session_redis_*` 라인 **제거** |
 | **SMTP** | `SMTP_HOST` 비어있음 | `odoo.conf`에서 `smtp_*` 라인 **제거** |
 | **S3** | `AWS_HOST` 비어있음 | `ir.attachment` override에서 **기본 filestore fallback** |
-| **LDAP** | `LDAP_SERVER` 비어있음 | LDAP provider 생성 **스킵** |
+| **OIDC** | `OIDC_ISSUER` 비어있음 | SSO 비활성화, Odoo 기본 로그인 fallback |
 
 ### entrypoint.sh에서 처리 예시
 
 ```bash
 # envsubst로 conf 생성 후, 빈 값 서비스 라인 제거
 envsubst < "$ODOO_CONF_TEMPLATE_PATH" > "$ODOO_CONF_PATH"
-
-# Redis 미설정 → conf에서 제거
-if [ -z "$SESSION_REDIS_HOST" ]; then
-  sed -i '/session_redis/d' "$ODOO_CONF_PATH"
-fi
 
 # SMTP 미설정 → conf에서 제거
 if [ -z "$SMTP_HOST" ]; then

@@ -80,11 +80,13 @@ if [ -n "$DB_HOST" ] && [ -n "$DB_PORT" ]; then
   done
 fi
 
+ODOO_BIN="${ODOO_HOME}/odoo-bin"
+
 echo "Odoo 초기화를 수행합니다..."
 odoo_initial_modules="base,auth_ldap,polyon_ldap_auto,polyon_s3_attachment,polyon_redis_session"
 
-odoo --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
+python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
 
 echo "Odoo를 기동합니다..."
-exec "$@"
+exec python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH"
 

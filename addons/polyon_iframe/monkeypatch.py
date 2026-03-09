@@ -12,6 +12,23 @@ def _install_iframe_header_patch():
         response = original_get_response(self, httprequest, result, explicit_session)
         if "X-Frame-Options" in response.headers:
             response.headers.pop("X-Frame-Options", None)
+
+        # 세션 쿠키가 iframe (크로스 도메인)에서도 동작하도록 SameSite=None; Secure를 강제한다
+        session_cookie_name = "session_id"
+        updated_cookies = []
+
+        for header_name, header_value in response.headers.get_all("Set-Cookie", []):
+            if session_cookie_name in header_value and "SameSite" not in header_value:
+                # SameSite=None; Secure 속성이 없으면 추가한다
+                header_value = header_value + "; SameSite=None; Secure"
+            updated_cookies.append((header_name, header_value))
+
+        if updated_cookies:
+            # 기존 Set-Cookie 헤더를 제거하고 수정된 값으로 다시 설정한다
+            response.headers.pop("Set-Cookie", None)
+            for header_name, header_value in updated_cookies:
+                response.headers.add(header_name, header_value)
+
         return response
 
     if getattr(Root, "_polyon_iframe_patched", False):

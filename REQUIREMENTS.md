@@ -549,7 +549,74 @@ def _file_write(self, bin_value, checksum):
 
 ---
 
-## 13. 절대 하지 말 것
+## 13. PP 환경 통합 주의사항
+
+### 13.1 Console/Portal iframe 프록시
+
+PP에서 모듈 UI는 Console/Portal nginx를 경유하여 iframe으로 표시된다:
+
+```
+Console (https://console.cmars.com)
+  └→ nginx: /modules/odoo/ → proxy_pass http://polyon-odoo:8069
+    └→ <iframe src="/modules/odoo/web">
+```
+
+**현재 Console nginx에 Odoo 프록시가 없다** — 이건 PP Core/Console 측 작업이지만,  
+Odoo 측에서 확인해야 할 것:
+
+- Odoo가 `/web` 경로 앞에 prefix(`/modules/odoo/`)가 붙어도 정상 동작하는지
+- 필요 시 `--proxy-mode=True` + `X-Forwarded-*` 헤더로 경로 인식
+- Odoo 정적 파일(JS/CSS)의 경로가 prefix 환경에서 깨지지 않는지
+
+### 13.2 iframe 세션 쿠키 (SameSite)
+
+Console(`console.cmars.com`)에서 Odoo(`odoo.cmars.com`)를 iframe으로 표시할 때,  
+**크로스 도메인 쿠키 문제**가 발생한다.
+
+**필요한 처리:**
+- Odoo 세션 쿠키에 `SameSite=None; Secure` 속성 추가
+- `polyon_iframe` addon에서 response header 또는 Odoo의 `session_cookie` 설정 수정
+
+```python
+# polyon_iframe addon에 추가 필요
+# Odoo의 session cookie SameSite 설정
+from odoo.http import Response
+
+# werkzeug의 session cookie 옵션 override
+# session_cookie_samesite = 'None'
+# session_cookie_secure = True
+```
+
+> ⚠️ 이것 없이는 iframe 내 Odoo 로그인이 동작하지 않는다.
+
+### 13.3 Console/Portal 페이지 선언 전략
+
+Odoo는 자체 메뉴 시스템이 있으므로, PP Console에서 세부 메뉴를 나눌 필요는 적다.  
+현재 단일 페이지 선언(`Odoo 관리`, `비즈니스`)은 **Phase 1에서 적절하다.**
+
+Phase 3에서 필요 시 ERP/HR/재고 등 주요 모듈별 진입점을 추가할 수 있다:
+
+```yaml
+# Phase 3 예시 (선택)
+console:
+  pages:
+    - id: backend
+      title: "Odoo 관리"
+      icon: Enterprise
+      default: true
+    - id: hr
+      title: "인사관리"
+      icon: UserMultiple
+      path: "odoo/hr"
+    - id: inventory
+      title: "재고"
+      icon: Inventory
+      path: "odoo/inventory"
+```
+
+---
+
+## 14. 절대 하지 말 것
 
 1. **환경변수 하드코딩 금지** — DB 호스트, 비밀번호 등을 이미지에 박지 말 것
 2. **PRC 환경변수명 임의 변경 금지** — Provider Reference에 정의된 credential key 그대로 사용

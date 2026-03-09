@@ -15,12 +15,7 @@ proxy_mode = ${ODOO_PROXY_MODE}
 ; Workers
 workers = ${ODOO_WORKERS}
 
-; Redis Session (선택)
-session_redis_host = ${SESSION_REDIS_HOST}
-session_redis_port = ${SESSION_REDIS_PORT}
-session_redis_dbindex = ${SESSION_REDIS_DBINDEX}
-
-; SMTP
+; SMTP (빈 값이면 entrypoint가 제거)
 smtp_server = ${SMTP_HOST}
 smtp_port = ${SMTP_PORT}
 smtp_user = ${SMTP_USER}
@@ -29,4 +24,7 @@ smtp_ssl = True
 
 ; Addons
 addons_path = /opt/odoo/addons,/opt/odoo/addons-custom
+
+; HTTP
+http_interface = 0.0.0.0
 

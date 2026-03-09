@@ -55,7 +55,7 @@ WORKDIR ${ODOO_HOME}
 
 # Python 의존성 (--break-system-packages for Ubuntu Noble)
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt \
-    && pip3 install --no-cache-dir --break-system-packages boto3 redis
+    && pip3 install --no-cache-dir --break-system-packages boto3 PyJWT cryptography
 
 # 커스텀 addons
 COPY addons/ ${ODOO_HOME}/addons-custom/
@@ -76,4 +76,4 @@ USER odoo
 EXPOSE 8069 8072
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["odoo", "--config=/etc/odoo/odoo.conf"]
+CMD ["python3", "/opt/odoo/odoo-bin", "--config=/etc/odoo/odoo.conf"]

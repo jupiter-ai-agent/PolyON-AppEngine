@@ -12,40 +12,9 @@ if [ ! -f "$ODOO_CONF_TEMPLATE_PATH" ]; then
   exit 1
 fi
 
-# REDIS_URL 이 존재하면 세션용 Redis 설정을 파싱해서 환경변수로 노출
-if [ -n "$REDIS_URL" ]; then
-  parsed_host=$(python3 - <<EOF
-import os
-from urllib.parse import urlparse
-
-url = os.getenv("REDIS_URL", "")
-if not url:
-    raise SystemExit(0)
-parsed = urlparse(url)
-host = parsed.hostname or ""
-port = parsed.port or 6379
-dbindex = (parsed.path or "").lstrip("/") or "0"
-print(f"{host} {port} {dbindex}")
-EOF
-)
-  if [ -n "$parsed_host" ]; then
-    SESSION_REDIS_HOST=$(echo "$parsed_host" | awk '{print $1}')
-    SESSION_REDIS_PORT=$(echo "$parsed_host" | awk '{print $2}')
-    SESSION_REDIS_DBINDEX=$(echo "$parsed_host" | awk '{print $3}')
-    export SESSION_REDIS_HOST SESSION_REDIS_PORT SESSION_REDIS_DBINDEX
-  fi
-fi
-
 # 환경변수를 사용하여 odoo.conf 생성
 # 템플릿 안에서 ${VAR} 형식으로 치환됨
 envsubst < "$ODOO_CONF_TEMPLATE_PATH" > "$ODOO_CONF_PATH"
-
-# Redis 설정이 비어 있으면 해당 설정 라인을 제거한다
-if [ -z "$SESSION_REDIS_HOST" ]; then
-  sed -i '/session_redis_host/d' "$ODOO_CONF_PATH"
-  sed -i '/session_redis_port/d' "$ODOO_CONF_PATH"
-  sed -i '/session_redis_dbindex/d' "$ODOO_CONF_PATH"
-fi
 
 # SMTP 설정이 비어 있으면 SMTP 관련 설정 라인을 제거한다
 if [ -z "$SMTP_HOST" ]; then
@@ -83,7 +52,7 @@ fi
 ODOO_BIN="${ODOO_HOME}/odoo-bin"
 
 echo "Odoo 초기화를 수행합니다..."
-odoo_initial_modules="base,auth_ldap,polyon_ldap_auto,polyon_s3_attachment,polyon_redis_session"
+odoo_initial_modules="base,polyon_s3_attachment,polyon_oidc,polyon_iframe"
 
 python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
 

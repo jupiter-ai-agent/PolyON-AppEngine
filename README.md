@@ -54,6 +54,8 @@ PolyON-Odoo/
 ├── .dockerignore
 ├── REQUIREMENTS.md             # 요구사항 정의서
 ├── QA.md                       # Q&A 답변
+├── dev/
+│   └── docker-compose.yml       # 로컬 개발/테스트 전용 (PP 배포와 무관)
 └── README.md
 ```
 

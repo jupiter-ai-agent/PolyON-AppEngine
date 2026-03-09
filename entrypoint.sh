@@ -40,6 +40,25 @@ fi
 # 템플릿 안에서 ${VAR} 형식으로 치환됨
 envsubst < "$ODOO_CONF_TEMPLATE_PATH" > "$ODOO_CONF_PATH"
 
+# Redis 설정이 비어 있으면 해당 설정 라인을 제거한다
+if [ -z "$SESSION_REDIS_HOST" ]; then
+  sed -i '/session_redis_host/d' "$ODOO_CONF_PATH"
+  sed -i '/session_redis_port/d' "$ODOO_CONF_PATH"
+  sed -i '/session_redis_dbindex/d' "$ODOO_CONF_PATH"
+fi
+
+# SMTP 설정이 비어 있으면 SMTP 관련 설정 라인을 제거한다
+if [ -z "$SMTP_HOST" ]; then
+  sed -i '/^smtp_server/d' "$ODOO_CONF_PATH"
+  sed -i '/^smtp_port/d' "$ODOO_CONF_PATH"
+  sed -i '/^smtp_user/d' "$ODOO_CONF_PATH"
+  sed -i '/^smtp_password/d' "$ODOO_CONF_PATH"
+  sed -i '/^smtp_ssl/d' "$ODOO_CONF_PATH"
+fi
+
+# 값이 완전히 비어 있는 설정 라인을 마지막으로 한 번 더 정리한다
+sed -i '/= $/d' "$ODOO_CONF_PATH"
+
 echo "생성된 odoo.conf:"
 sed -e 's/password = .*/password = ****/g' -e 's:aws_secret_access_key = .*:aws_secret_access_key = ****:g' "$ODOO_CONF_PATH" || true
 

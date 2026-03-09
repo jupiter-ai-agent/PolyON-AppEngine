@@ -5,6 +5,7 @@ import secrets
 
 import jwt
 import requests
+import werkzeug.utils
 from jwt.algorithms import RSAAlgorithm
 from urllib.parse import urlencode
 
@@ -120,7 +121,8 @@ class OIDCController(http.Controller):
         }
 
         auth_url = cfg["auth_endpoint"] + "?" + urlencode(params)
-        return request.redirect(auth_url)
+        # werkzeug 직접 사용 — Odoo request.redirect()는 외부 URL을 상대경로로 변환함
+        return werkzeug.utils.redirect(auth_url, code=303)
 
     # ── 2. Keycloak callback → Authorization Code → Token → 세션 생성 ──
     @http.route("/polyon/oidc/callback", type="http", auth="none", csrf=False)

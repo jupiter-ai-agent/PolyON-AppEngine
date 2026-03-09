@@ -501,7 +501,55 @@ portal:
 
 ---
 
-## 12. 절대 하지 말 것
+## 12. Graceful Skip 규칙 (Phase 1 필수)
+
+PRC는 5개 claim을 모두 프로비저닝하지만, **개별 서비스 연동은 env가 비어있으면 스킵**해야 한다.  
+Phase 1에서는 DB만으로 Odoo가 정상 기동되어야 한다.
+
+### 원칙
+- **env가 비어있으면 해당 기능 비활성화** — 에러 발생 금지
+- `odoo.conf`에 빈 값 라인이 남으면 Odoo가 빈 호스트로 연결 시도 → 에러
+
+### 구체적 처리
+
+| 서비스 | env 비어있을 때 | 처리 방법 |
+|--------|----------------|----------|
+| **Redis** | `SESSION_REDIS_HOST` 비어있음 | `odoo.conf`에서 `session_redis_*` 라인 **제거** |
+| **SMTP** | `SMTP_HOST` 비어있음 | `odoo.conf`에서 `smtp_*` 라인 **제거** |
+| **S3** | `AWS_HOST` 비어있음 | `ir.attachment` override에서 **기본 filestore fallback** |
+| **LDAP** | `LDAP_SERVER` 비어있음 | LDAP provider 생성 **스킵** |
+
+### entrypoint.sh에서 처리 예시
+
+```bash
+# envsubst로 conf 생성 후, 빈 값 서비스 라인 제거
+envsubst < "$ODOO_CONF_TEMPLATE_PATH" > "$ODOO_CONF_PATH"
+
+# Redis 미설정 → conf에서 제거
+if [ -z "$SESSION_REDIS_HOST" ]; then
+  sed -i '/session_redis/d' "$ODOO_CONF_PATH"
+fi
+
+# SMTP 미설정 → conf에서 제거
+if [ -z "$SMTP_HOST" ]; then
+  sed -i '/smtp_/d' "$ODOO_CONF_PATH"
+fi
+```
+
+### addon에서 처리 예시
+
+```python
+# S3 미설정 → filestore fallback
+def _file_write(self, bin_value, checksum):
+    client, bucket = self._get_s3_client()
+    if client is None:
+        return super()._file_write(bin_value, checksum)  # 기본 동작
+    # S3 저장 로직...
+```
+
+---
+
+## 13. 절대 하지 말 것
 
 1. **환경변수 하드코딩 금지** — DB 호스트, 비밀번호 등을 이미지에 박지 말 것
 2. **PRC 환경변수명 임의 변경 금지** — Provider Reference에 정의된 credential key 그대로 사용

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Settings → Users & Companies 메뉴 숨김 -->
+    <record id="base.menu_users" model="ir.ui.menu">
+        <field name="active" eval="False"/>
+    </record>
+</odoo>

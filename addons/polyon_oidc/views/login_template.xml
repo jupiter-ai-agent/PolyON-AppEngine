@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="polyon_login" inherit_id="web.login" priority="99">
+        <!-- 비밀번호 입력 필드 숨김 — SSO 버튼만 표시 -->
+        <xpath expr="//div[hasclass('field-login')]" position="replace">
+            <div class="text-center mb-3">
+                <h4>PolyON 계정으로 로그인</h4>
+            </div>
+        </xpath>
+        <xpath expr="//div[hasclass('field-password')]" position="replace"/>
+        <xpath expr="//button[@type='submit']" position="replace"/>
+    </template>
+</odoo>

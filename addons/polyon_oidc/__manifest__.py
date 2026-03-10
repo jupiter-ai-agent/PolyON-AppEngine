@@ -5,7 +5,10 @@
     "summary": "Keycloak OIDC SSO for PolyON Platform",
     "author": "Triangle.s",
     "depends": ["base", "web", "auth_oauth"],
-    "data": [],
+    "data": [
+        "views/hide_menus.xml",
+        "views/login_template.xml",
+    ],
     "post_init_hook": "post_init_hook",
     "installable": True,
     "auto_install": False,

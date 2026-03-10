@@ -16,6 +16,12 @@ fi
 # 템플릿 안에서 ${VAR} 형식으로 치환됨
 envsubst < "$ODOO_CONF_TEMPLATE_PATH" > "$ODOO_CONF_PATH"
 
+# OIDC 환경변수가 없으면 Odoo 기동을 차단한다
+if [ -z "$OIDC_ISSUER" ] || [ -z "$OIDC_CLIENT_ID" ] || [ -z "$OIDC_AUTH_ENDPOINT" ] || [ -z "$OIDC_TOKEN_ENDPOINT" ] || [ -z "$OIDC_JWKS_URI" ]; then
+  echo "OIDC 환경변수가 설정되지 않았습니다. PP 제1원칙에 따라 Odoo 기동을 중단합니다." >&2
+  exit 1
+fi
+
 # SMTP 설정이 비어 있으면 SMTP 관련 설정 라인을 제거한다
 if [ -z "$SMTP_HOST" ]; then
   sed -i '/^smtp_server/d' "$ODOO_CONF_PATH"
@@ -52,7 +58,7 @@ fi
 ODOO_BIN="${ODOO_HOME}/odoo-bin"
 
 echo "Odoo 초기화를 수행합니다..."
-odoo_initial_modules="base,polyon_s3_attachment,polyon_oidc,polyon_iframe"
+odoo_initial_modules="base,auth_oauth,polyon_s3_attachment,polyon_oidc,polyon_iframe"
 
 python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
 

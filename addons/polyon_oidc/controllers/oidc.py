@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import secrets
+import time
 
 import jwt
 import requests
@@ -15,7 +16,8 @@ from odoo.http import request
 
 logger = logging.getLogger(__name__)
 
-jwks_cache = {}
+_jwks_cache = {}
+_JWKS_TTL = 3600  # 1시간
 
 
 def _oidc_env(key, fallback=""):
@@ -35,13 +37,15 @@ def _oidc_config():
 
 
 def get_jwks(jwks_url):
-    """Keycloak JWKS 엔드포인트에서 공개키를 가져온다."""
-    if jwks_url in jwks_cache:
-        return jwks_cache[jwks_url]
+    """Keycloak JWKS에서 공개키를 가져온다 (TTL 캐시)."""
+    now = time.time()
+    cached = _jwks_cache.get(jwks_url)
+    if cached and (now - cached["ts"]) < _JWKS_TTL:
+        return cached["keys"]
     response = requests.get(jwks_url, timeout=10)
     response.raise_for_status()
     keys = response.json().get("keys", [])
-    jwks_cache[jwks_url] = keys
+    _jwks_cache[jwks_url] = {"keys": keys, "ts": now}
     return keys
 
 
@@ -55,6 +59,11 @@ def verify_jwt(token, cfg):
 
     keys = get_jwks(cfg["jwks_uri"])
     key_data = next((key for key in keys if key.get("kid") == key_identifier), None)
+    if not key_data:
+        # kid miss — 캐시 무효화 후 재시도
+        _jwks_cache.pop(cfg["jwks_uri"], None)
+        keys = get_jwks(cfg["jwks_uri"])
+        key_data = next((key for key in keys if key.get("kid") == key_identifier), None)
     if not key_data:
         raise ValueError(f"JWKS에서 kid={key_identifier} 키를 찾을 수 없음")
 
@@ -76,7 +85,7 @@ def _find_or_create_user(username, email, name):
     user = user_model.search([("login", "=", username)], limit=1)
 
     if not user:
-        user = user_model.create({
+        user = user_model.with_context(polyon_sync=True).create({
             "login": username,
             "name": name or username,
             "email": email or "",

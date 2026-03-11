@@ -58,7 +58,7 @@ fi
 ODOO_BIN="${ODOO_HOME}/odoo-bin"
 
 echo "Odoo 초기화를 수행합니다..."
-odoo_initial_modules="base,auth_oauth,polyon_s3_attachment,polyon_oidc,polyon_iframe"
+odoo_initial_modules="base,auth_ldap,auth_oauth,polyon_s3_attachment,polyon_oidc,polyon_iframe,polyon_ldap"
 
 python3 "$ODOO_BIN" --config="$ODOO_CONF_PATH" -i "$odoo_initial_modules" --stop-after-init || true
 

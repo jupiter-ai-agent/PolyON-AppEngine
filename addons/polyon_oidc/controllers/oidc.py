@@ -25,14 +25,19 @@ def _oidc_env(key, fallback=""):
 
 
 def _oidc_config():
-    """PRC가 주입한 OIDC 환경변수에서 설정을 읽는다."""
+    """PRC가 주입한 OIDC 환경변수에서 설정을 읽는다.
+    
+    토큰 교환/JWKS는 서버→서버 통신이므로 내부 K8s URL 우선 사용.
+    auth_endpoint는 브라우저→KC이므로 외부 URL 사용.
+    """
     return {
         "issuer": _oidc_env("OIDC_ISSUER"),
         "client_id": _oidc_env("OIDC_CLIENT_ID"),
         "client_secret": _oidc_env("OIDC_CLIENT_SECRET"),
-        "auth_endpoint": _oidc_env("OIDC_AUTH_ENDPOINT"),
-        "token_endpoint": _oidc_env("OIDC_TOKEN_ENDPOINT"),
-        "jwks_uri": _oidc_env("OIDC_JWKS_URI"),
+        "auth_endpoint": _oidc_env("OIDC_AUTH_ENDPOINT"),  # 외부 URL (브라우저 사용)
+        # 서버→서버: 내부 URL 우선, fallback으로 외부 URL
+        "token_endpoint": _oidc_env("OIDC_TOKEN_ENDPOINT_INTERNAL") or _oidc_env("OIDC_TOKEN_ENDPOINT"),
+        "jwks_uri": _oidc_env("OIDC_JWKS_URI_INTERNAL") or _oidc_env("OIDC_JWKS_URI"),
     }
 
 
@@ -112,12 +117,10 @@ class OIDCController(http.Controller):
             logger.warning("OIDC 미설정, 기본 로그인으로 fallback")
             return request.render("web.login", {"error": "OIDC 설정을 확인하세요"})
 
-        # PKCE state 생성
+        # state 생성 — 쿠키로 저장 (auth=none route에서 세션 불안정)
         state = secrets.token_urlsafe(32)
-        request.session["oidc_state"] = state
-        request.session["oidc_redirect"] = redirect or "/web"
+        redirect_dest = redirect or "/web"
 
-        # Keycloak의 redirect_uri = Odoo의 callback 엔드포인트
         base_url = request.httprequest.host_url.rstrip("/")
         redirect_uri = base_url + "/polyon/oidc/callback"
 
@@ -130,8 +133,11 @@ class OIDCController(http.Controller):
         }
 
         auth_url = cfg["auth_endpoint"] + "?" + urlencode(params)
-        # werkzeug 직접 사용 — Odoo request.redirect()는 외부 URL을 상대경로로 변환함
-        return werkzeug.utils.redirect(auth_url, code=303)
+        response = werkzeug.utils.redirect(auth_url, code=303)
+        # state와 redirect를 쿠키에 저장 (httponly, samesite=lax)
+        response.set_cookie("oidc_state", state, httponly=True, samesite="Lax", max_age=300)
+        response.set_cookie("oidc_redirect", redirect_dest, httponly=True, samesite="Lax", max_age=300)
+        return response
 
     # ── 2. Keycloak callback → Authorization Code → Token → 세션 생성 ──
     @http.route("/polyon/oidc/callback", type="http", auth="none", csrf=False)
@@ -141,14 +147,14 @@ class OIDCController(http.Controller):
             logger.warning("OIDC 에러: %s", error)
             return request.redirect("/web")
 
-        # state 검증
-        saved_state = request.session.pop("oidc_state", None)
+        # state 검증 — 쿠키에서 읽기
+        saved_state = request.httprequest.cookies.get("oidc_state")
         if not state or state != saved_state:
-            logger.warning("OIDC state 불일치")
+            logger.warning("OIDC state 불일치 (got=%s, saved=%s)", state, saved_state)
             return request.redirect("/web")
 
         cfg = _oidc_config()
-        redirect_to = request.session.pop("oidc_redirect", "/web")
+        redirect_to = request.httprequest.cookies.get("oidc_redirect", "/web")
 
         # Authorization Code → Token 교환
         base_url = request.httprequest.host_url.rstrip("/")

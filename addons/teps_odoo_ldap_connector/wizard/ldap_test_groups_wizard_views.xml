@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Test LDAP Groups Wizard Form View -->
+    <record id="ldap_test_groups_wizard_form" model="ir.ui.view">
+        <field name="name">ldap.test.groups.wizard.form</field>
+        <field name="model">ldap.test.groups.wizard</field>
+        <field name="arch" type="xml">
+            <form string="LDAP">
+                <div class="mb-3">
+                    <h4>Test LDAP Groups</h4>
+                    <p class="text-muted">A subset of groups has been displayed for you to review.</p>
+                </div>
+
+                <field name="line_ids" nolabel="1">
+                    <list editable="bottom" create="false" delete="false">
+                        <field name="sequence" string="#" readonly="1"/>
+                        <field name="name" string="Name" readonly="1"/>
+                        <field name="description" string="Description" readonly="1"/>
+                        <field name="member_count" string="Members" readonly="1"/>
+                    </list>
+                </field>
+
+                <footer>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

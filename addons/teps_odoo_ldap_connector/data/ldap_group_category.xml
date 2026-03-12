@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+
+        <!-- AD 그룹 전용 카테고리 -->
+        <record id="module_category_ad_groups" model="ir.module.category">
+            <field name="name">AD Groups</field>
+            <field name="description">Groups synchronized from Active Directory via LDAP.
+These groups are automatically created when users log in via LDAP authentication.
+You can assign permissions to these groups using the standard Odoo access rights system.</field>
+            <field name="sequence">100</field>
+        </record>
+
+    </data>
+</odoo>

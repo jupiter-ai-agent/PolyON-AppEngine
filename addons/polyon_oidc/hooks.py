@@ -6,7 +6,7 @@ from odoo import SUPERUSER_ID, api
 logger = logging.getLogger(__name__)
 
 
-def post_init_hook(cr, registry):
+def post_init_hook(env):
     # OIDC 환경변수가 없으면 Provider를 생성하지 않는다
     issuer = os.getenv("OIDC_ISSUER", "")
     client_id = os.getenv("OIDC_CLIENT_ID", "")
@@ -17,7 +17,6 @@ def post_init_hook(cr, registry):
         logger.error("OIDC 환경변수가 부족하여 auth_oauth Provider를 생성하지 못했습니다.")
         return
 
-    env = api.Environment(cr, SUPERUSER_ID, {})
     provider_model = env["auth.oauth.provider"].sudo()
 
     existing_provider = provider_model.search(
@@ -31,6 +30,7 @@ def post_init_hook(cr, registry):
         "auth_endpoint": auth_endpoint,
         "validation_endpoint": token_endpoint,
         "scope": "openid profile email",
+        "body": "PolyON 계정으로 로그인",  # Odoo 19: body is required (jsonb, auto-translated)
     }
 
     if existing_provider:
@@ -39,4 +39,3 @@ def post_init_hook(cr, registry):
     else:
         provider_model.create(provider_values)
         logger.info("새로운 Keycloak OIDC Provider 구성을 생성했습니다.")
-

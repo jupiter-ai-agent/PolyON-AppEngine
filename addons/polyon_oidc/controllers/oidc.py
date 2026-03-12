@@ -200,18 +200,27 @@ class OIDCController(http.Controller):
             logger.warning("ID Token에 preferred_username 없음")
             return request.redirect("/web")
 
-        # 사용자 찾기/생성 + 세션 직접 설정 (Odoo 19)
+        # 사용자 찾기/생성
         try:
             user = _find_or_create_user(username, email, name)
         except Exception as e:
             logger.error("OIDC 사용자 생성/조회 실패: %s", e)
             return request.redirect("/web?oidc_error=user_create")
 
-        request.session.uid = user.id
-        request.session.login = user.login
-        request.session.db = request.db
-        request.session.session_token = user._compute_session_token(request.session.sid)
+        # Odoo 19 세션 설정 — session.finalize() 방식과 동일하게
+        env = request.env(user=user.id)
+        user_context = dict(env["res.users"].context_get())
 
+        request.session.should_rotate = True
+        request.session.update({
+            "db": request.db,
+            "login": user.login,
+            "uid": user.id,
+            "context": user_context,
+            "session_token": user.sudo()._compute_session_token(request.session.sid),
+        })
+
+        logger.info("OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
 
     # ── 3. iframe용 JWT 직접 로그인 (Console/Portal에서 사용) ──

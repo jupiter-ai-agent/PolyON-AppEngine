@@ -187,14 +187,13 @@ class OIDCController(http.Controller):
             logger.warning("ID Token에 preferred_username 없음")
             return request.redirect("/web")
 
-        # 사용자 찾기/생성 + 세션
-        _find_or_create_user(username, email, name)
+        # 사용자 찾기/생성 + 세션 직접 설정 (Odoo 19)
+        user = _find_or_create_user(username, email, name)
 
-        request.session.authenticate(
-            request.db,
-            username,
-            {"type": "token"},
-        )
+        request.session.uid = user.id
+        request.session.login = user.login
+        request.session.db = request.db
+        request.session.session_token = user._compute_session_token(request.session.sid)
 
         return request.redirect(redirect_to)
 
@@ -219,12 +218,11 @@ class OIDCController(http.Controller):
         if not username:
             return request.redirect("/web/login")
 
-        _find_or_create_user(username, email, name)
+        user = _find_or_create_user(username, email, name)
 
-        request.session.authenticate(
-            request.db,
-            username,
-            {"type": "token"},
-        )
+        request.session.uid = user.id
+        request.session.login = user.login
+        request.session.db = request.db
+        request.session.session_token = user._compute_session_token(request.session.sid)
 
         return request.redirect(redirect)

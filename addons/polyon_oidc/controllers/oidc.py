@@ -101,7 +101,7 @@ def _find_or_create_user(username, email, name):
             "email": email or "",
             "company_id": company_id,
             "company_ids": [(4, company_id)],
-            "groups_id": [(4, env.ref("base.group_user").id)],
+            "group_ids": [(4, env.ref("base.group_user").id)],
         })
         logger.info("OIDC 사용자 자동 생성: %s (company_id=%s)", username, company_id)
 

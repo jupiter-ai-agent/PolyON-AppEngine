@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 import os
@@ -15,6 +16,59 @@ from odoo.http import request
 
 
 logger = logging.getLogger(__name__)
+_logger = logger  # alias for compatibility
+
+
+# ── KC roles → Odoo group sync helpers ────────────────────────────────────────
+
+def _get_kc_roles_from_token(access_token):
+    """JWT payload에서 realm_access.roles 추출 (검증 없이 파싱)."""
+    try:
+        parts = access_token.split('.')
+        if len(parts) < 2:
+            return []
+        # Base64 padding 보정
+        padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
+        payload = json.loads(base64.b64decode(padded).decode('utf-8'))
+        return payload.get('realm_access', {}).get('roles', [])
+    except Exception:
+        return []
+
+
+def _sync_odoo_groups_from_kc_roles(user, kc_roles):
+    """KC 역할 → Odoo group_ids 동기화 (Core API 경유).
+
+    실패해도 로그인은 계속 진행된다.
+    """
+    if not kc_roles:
+        return
+    core_url = os.getenv(
+        'POLYON_CORE_URL',
+        'http://polyon-core.polyon.svc.cluster.local:8000'
+    )
+    try:
+        resp = requests.get(
+            f'{core_url}/api/v1/appengine/role-mappings',
+            timeout=5
+        )
+        if resp.status_code != 200:
+            _logger.warning("Group sync: Core API returned %s", resp.status_code)
+            return
+        mappings = resp.json().get('mappings', [])
+
+        # KC 역할에 매핑된 Odoo group_ids 수집
+        group_ids = set()
+        for mapping in mappings:
+            if mapping.get('kc_role') in kc_roles:
+                raw = mapping.get('odoo_group_ids', [])
+                if isinstance(raw, list):
+                    group_ids.update(int(gid) for gid in raw if gid)
+
+        if group_ids:
+            user.sudo().write({'group_ids': [(6, 0, list(group_ids))]})
+            _logger.info("Synced Odoo groups for user %s: %s", user.login, group_ids)
+    except Exception as e:
+        _logger.warning("Group sync failed for %s: %s", getattr(user, 'login', '?'), e)
 
 _jwks_cache = {}
 _JWKS_TTL = 3600  # 1시간
@@ -253,6 +307,11 @@ class OIDCController(http.Controller):
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
 
+        # KC access_token에서 realm_access.roles 추출 후 Odoo 그룹 동기화
+        access_token = tokens.get("access_token", "")
+        kc_roles = _get_kc_roles_from_token(access_token)
+        _sync_odoo_groups_from_kc_roles(user, kc_roles)
+
         logger.info("OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
 
@@ -355,6 +414,11 @@ class OIDCController(http.Controller):
             "context": user_context,
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
+
+        # KC access_token에서 realm_access.roles 추출 후 Odoo 그룹 동기화
+        access_token = tokens.get("access_token", "")
+        kc_roles = _get_kc_roles_from_token(access_token)
+        _sync_odoo_groups_from_kc_roles(user, kc_roles)
 
         logger.info("admin OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)

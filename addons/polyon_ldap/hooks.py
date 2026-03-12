@@ -5,8 +5,7 @@ from odoo import api, SUPERUSER_ID
 
 logger = logging.getLogger(__name__)
 
-
-def post_init_hook(cr, registry):
+def post_init_hook(env):
     """PRC directory 환경변수에서 LDAP 설정을 읽어 res.company.ldap 레코드를 생성한다."""
     ldap_host = os.getenv("LDAP_HOST", "")
     ldap_port = os.getenv("LDAP_PORT", "389")
@@ -18,7 +17,6 @@ def post_init_hook(cr, registry):
         logger.warning("LDAP 환경변수 미설정 — LDAP 자동 설정 건너뜀")
         return
 
-    env = api.Environment(cr, SUPERUSER_ID, {})
     ldap_model = env["res.company.ldap"].sudo()
     company = env["res.company"].sudo().search([], limit=1)
 
@@ -36,7 +34,7 @@ def post_init_hook(cr, registry):
         "ldap_binddn": ldap_bind_dn,
         "ldap_password": ldap_bind_password,
         "ldap_filter": "(&(objectClass=user)(sAMAccountName=%s))",
-        "create_user": False,  # SSO로만 생성, LDAP 자동 생성 금지
+        "create_user": False,
     }
 
     if existing:

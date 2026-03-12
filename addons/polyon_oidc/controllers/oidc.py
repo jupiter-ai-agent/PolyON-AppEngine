@@ -59,10 +59,11 @@ def _extract_cn_from_dn(dn):
     return None
 
 
-def _get_or_create_odoo_group(env, group_name):
+def _get_or_create_odoo_group(env, group_name, source_dn=None):
     """Odoo에서 그룹 검색. 없으면 [AD Group] 마커로 신규 생성.
 
     teps _get_or_create_odoo_group() 패턴.
+    source_dn: LDAP DN 또는 KC 그룹 경로 (comment에 기록)
     """
     ResGroups = env['res.groups'].sudo()
 
@@ -74,9 +75,12 @@ def _get_or_create_odoo_group(env, group_name):
 
     # 신규 생성 — comment에 [AD Group] 마커 삽입 (teps 패턴)
     try:
+        comment = f'[AD Group] Auto-created from Active Directory.'
+        if source_dn:
+            comment += f'\nSource DN: {source_dn}'
         new_group = ResGroups.create({
             'name': group_name,
-            'comment': f'[AD Group] KC OIDC에서 자동 생성',
+            'comment': comment,
         })
         _logger.info("Created [AD Group]: %s (id=%d)", group_name, new_group.id)
         return new_group.id
@@ -113,37 +117,47 @@ def _update_user_ad_groups(user, new_group_ids):
         _logger.debug("Updated AD groups for %s: -%d +%d", user.login, removed, added)
 
 
-def _sync_odoo_groups_from_kc_groups(user, groups_claim):
-    """KC JWT groups 클레임 → Odoo [AD Group] 동기화.
+def _sync_ad_groups_from_token(user, access_token):
+    """KC JWT access_token → Odoo [AD Group] 동기화 (teps 방식).
 
-    - groups_claim 이 비어 있으면(KC 매퍼 미설정 등) 동기화 skip
-    - DN/이름 형식 모두 처리
+    - access_token에서 groups 클레임을 직접 추출
+    - groups 클레임 없으면(KC 매퍼 미설정 등) 동기화 skip → 로그인은 정상 진행
+    - KC 경로 형식('/Sales') 및 LDAP DN 형식('CN=Sales,...') 모두 처리
     - 실패해도 로그인은 계속 진행
 
-    teps _sync_ad_groups_for_user() 패턴 기반.
+    teps _sync_ad_groups_for_user() 패턴 포팅.
     """
-    if not groups_claim:
-        return  # groups 클레임 없음 → KC 매퍼 미설정, skip
-
-    env = user.env
-    new_group_ids = set()
-
-    for g in groups_claim:
-        cn = _extract_cn_from_dn(g)
-        if not cn:
-            continue
-        gid = _get_or_create_odoo_group(env, cn)
-        if gid:
-            new_group_ids.add(gid)
-
     try:
+        groups = _get_groups_from_token(access_token)
+        if not groups:
+            return  # groups 클레임 없음 → KC 매퍼 미설정, skip
+
+        new_group_ids = set()
+        for group_entry in groups:
+            # KC group-ldap-mapper는 '/Sales' 또는 'CN=Sales,...' 형태로 전달
+            if group_entry.startswith('/'):
+                # KC 기본 그룹 경로 형식: '/Sales' → 'Sales'
+                group_name = group_entry.lstrip('/')
+                source_dn = group_entry
+            else:
+                # LDAP DN 형식
+                group_name = _extract_cn_from_dn(group_entry)
+                source_dn = group_entry
+
+            if not group_name:
+                continue
+
+            gid = _get_or_create_odoo_group(user.env, group_name, source_dn)
+            if gid:
+                new_group_ids.add(gid)
+
         _update_user_ad_groups(user, new_group_ids)
         _logger.info(
-            "KC group sync completed for %s: %d groups (%s)",
-            user.login, len(new_group_ids), list(new_group_ids)
+            "AD group sync completed for %s: %d groups",
+            user.login, len(new_group_ids)
         )
     except Exception as e:
-        _logger.warning("KC group sync failed for %s: %s", user.login, e)
+        _logger.warning("AD group sync failed for %s: %s", getattr(user, 'login', '?'), e)
 
 _jwks_cache = {}
 _JWKS_TTL = 3600  # 1시간
@@ -382,10 +396,9 @@ class OIDCController(http.Controller):
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
 
-        # KC access_token에서 groups 클레임 추출 후 Odoo [AD Group] 동기화
+        # KC access_token → Odoo [AD Group] 동기화 (teps 방식)
         access_token = tokens.get("access_token", "")
-        kc_groups = _get_groups_from_token(access_token)
-        _sync_odoo_groups_from_kc_groups(user, kc_groups)
+        _sync_ad_groups_from_token(user, access_token)
 
         logger.info("OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
@@ -490,10 +503,9 @@ class OIDCController(http.Controller):
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
 
-        # KC access_token에서 groups 클레임 추출 후 Odoo [AD Group] 동기화
+        # KC access_token → Odoo [AD Group] 동기화 (teps 방식)
         access_token = tokens.get("access_token", "")
-        kc_groups = _get_groups_from_token(access_token)
-        _sync_odoo_groups_from_kc_groups(user, kc_groups)
+        _sync_ad_groups_from_token(user, access_token)
 
         logger.info("admin OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
@@ -693,9 +705,17 @@ class OIDCController(http.Controller):
                     continue
 
                 kc_groups = groups_resp.json()
+                # KC Admin API에서 가져온 그룹 이름 목록 → Odoo [AD Group] 동기화
                 group_names = [g.get("name", "") for g in kc_groups if g.get("name")]
 
-                _sync_odoo_groups_from_kc_groups(user, group_names)
+                new_group_ids = set()
+                for gname in group_names:
+                    if not gname:
+                        continue
+                    gid = _get_or_create_odoo_group(user.env, gname, source_dn=f"KC:{gname}")
+                    if gid:
+                        new_group_ids.add(gid)
+                _update_user_ad_groups(user, new_group_ids)
                 synced += 1
 
             except Exception as e:

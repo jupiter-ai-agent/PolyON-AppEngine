@@ -24,20 +24,33 @@ def _oidc_env(key, fallback=""):
     return os.getenv(key, fallback)
 
 
-def _oidc_config():
+def _oidc_config(admin=False):
     """PRC가 주입한 OIDC 환경변수에서 설정을 읽는다.
     
-    토큰 교환/JWKS는 서버→서버 통신이므로 내부 K8s URL 우선 사용.
+    admin=True: admin realm 설정 (Console 관리자 → Odoo admin 권한)
+    admin=False: polyon realm 설정 (일반 사원)
+    
+    토큰 교환/JWKS는 서버→서버이므로 내부 K8s URL 우선.
     auth_endpoint는 브라우저→KC이므로 외부 URL 사용.
     """
+    if admin:
+        return {
+            "issuer": _oidc_env("OIDC_ADMIN_ISSUER"),
+            "client_id": _oidc_env("OIDC_ADMIN_CLIENT_ID"),
+            "client_secret": _oidc_env("OIDC_ADMIN_CLIENT_SECRET"),
+            "auth_endpoint": _oidc_env("OIDC_ADMIN_AUTH_ENDPOINT"),
+            "token_endpoint": _oidc_env("OIDC_ADMIN_TOKEN_ENDPOINT_INTERNAL"),
+            "jwks_uri": _oidc_env("OIDC_ADMIN_JWKS_URI_INTERNAL"),
+            "is_admin": True,
+        }
     return {
         "issuer": _oidc_env("OIDC_ISSUER"),
         "client_id": _oidc_env("OIDC_CLIENT_ID"),
         "client_secret": _oidc_env("OIDC_CLIENT_SECRET"),
-        "auth_endpoint": _oidc_env("OIDC_AUTH_ENDPOINT"),  # 외부 URL (브라우저 사용)
-        # 서버→서버: 내부 URL 우선, fallback으로 외부 URL
+        "auth_endpoint": _oidc_env("OIDC_AUTH_ENDPOINT"),
         "token_endpoint": _oidc_env("OIDC_TOKEN_ENDPOINT_INTERNAL") or _oidc_env("OIDC_TOKEN_ENDPOINT"),
         "jwks_uri": _oidc_env("OIDC_JWKS_URI_INTERNAL") or _oidc_env("OIDC_JWKS_URI"),
+        "is_admin": False,
     }
 
 
@@ -84,17 +97,21 @@ def verify_jwt(token, cfg):
     return payload
 
 
-def _find_or_create_user(username, email, name):
-    """Odoo에서 사용자를 찾거나 자동 생성한다."""
+def _find_or_create_user(username, email, name, is_admin=False):
+    """Odoo에서 사용자를 찾거나 자동 생성한다.
+    
+    is_admin=True: admin realm에서 로그인 → Odoo Administrator 권한 부여
+    is_admin=False: polyon realm에서 로그인 → 일반 사원 권한
+    """
     env = request.env
     user_model = env["res.users"].sudo()
     user = user_model.search([("login", "=", username)], limit=1)
 
-    if not user:
-        # 기본 회사 조회 (company_id NOT NULL)
-        company = env["res.company"].sudo().search([], limit=1, order="id asc")
-        company_id = company.id if company else 1
+    # 기본 회사 조회 (company_id NOT NULL)
+    company = env["res.company"].sudo().search([], limit=1, order="id asc")
+    company_id = company.id if company else 1
 
+    if not user:
         user = user_model.with_context(polyon_sync=True, no_reset_password=True).create({
             "login": username,
             "name": name or username,
@@ -104,6 +121,13 @@ def _find_or_create_user(username, email, name):
             "group_ids": [(4, env.ref("base.group_user").id)],
         })
         logger.info("OIDC 사용자 자동 생성: %s (company_id=%s)", username, company_id)
+
+    # admin realm 로그인 → Odoo Administrator 그룹 보장
+    if is_admin:
+        admin_group = env.ref("base.group_system", raise_if_not_found=False)
+        if admin_group and admin_group not in user.sudo().group_ids:
+            user.sudo().write({"group_ids": [(4, admin_group.id)]})
+            logger.info("OIDC admin 권한 부여: %s", username)
 
     return user
 
@@ -223,7 +247,110 @@ class OIDCController(http.Controller):
         logger.info("OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
 
-    # ── 3. iframe용 JWT 직접 로그인 (Console/Portal에서 사용) ──
+    # ── 3. Admin realm 로그인 시작 (Console → Odoo Admin) ──
+    @http.route("/polyon/oidc/admin/login", type="http", auth="none", website=False)
+    def oidc_admin_login(self, redirect=None, **kwargs):
+        """Console 관리자 전용 — admin realm으로 Keycloak 인증 후 Odoo Administrator 권한 부여."""
+        if request.session.uid:
+            return request.redirect(redirect or "/web")
+
+        cfg = _oidc_config(admin=True)
+        if not cfg["auth_endpoint"] or not cfg["client_id"]:
+            logger.warning("admin realm OIDC 미설정")
+            return request.redirect("/web")
+
+        state = secrets.token_urlsafe(32)
+        redirect_dest = redirect or "/web"
+
+        base_url = request.httprequest.host_url.rstrip("/")
+        redirect_uri = base_url + "/polyon/oidc/admin/callback"
+
+        params = {
+            "client_id": cfg["client_id"],
+            "response_type": "code",
+            "scope": "openid profile email",
+            "redirect_uri": redirect_uri,
+            "state": state,
+        }
+
+        auth_url = cfg["auth_endpoint"] + "?" + urlencode(params)
+        response = werkzeug.utils.redirect(auth_url, code=303)
+        response.set_cookie("oidc_admin_state", state, httponly=True, samesite="Lax", max_age=300)
+        response.set_cookie("oidc_admin_redirect", redirect_dest, httponly=True, samesite="Lax", max_age=300)
+        return response
+
+    # ── 4. Admin realm 콜백 ──
+    @http.route("/polyon/oidc/admin/callback", type="http", auth="none", csrf=False)
+    def oidc_admin_callback(self, code=None, state=None, error=None, **kwargs):
+        """admin realm KC 콜백 — Administrator 권한으로 세션 생성."""
+        if error:
+            logger.warning("admin OIDC 에러: %s", error)
+            return request.redirect("/web")
+
+        saved_state = request.httprequest.cookies.get("oidc_admin_state")
+        if not state or state != saved_state:
+            logger.warning("admin OIDC state 불일치")
+            return request.redirect("/web")
+
+        cfg = _oidc_config(admin=True)
+        redirect_to = request.httprequest.cookies.get("oidc_admin_redirect", "/web")
+
+        base_url = request.httprequest.host_url.rstrip("/")
+        redirect_uri = base_url + "/polyon/oidc/admin/callback"
+
+        token_data = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": cfg["client_id"],
+        }
+        if cfg["client_secret"]:
+            token_data["client_secret"] = cfg["client_secret"]
+
+        try:
+            resp = requests.post(cfg["token_endpoint"], data=token_data, timeout=10)
+            resp.raise_for_status()
+            tokens = resp.json()
+        except Exception as e:
+            logger.error("admin OIDC 토큰 교환 실패: %s", e)
+            return request.redirect("/web")
+
+        id_token = tokens.get("id_token", "")
+        try:
+            payload = verify_jwt(id_token, cfg)
+        except Exception as e:
+            logger.warning("admin OIDC ID Token 검증 실패: %s", e)
+            return request.redirect("/web")
+
+        username = payload.get("preferred_username", "")
+        email = payload.get("email", "")
+        name = payload.get("name", "") or username
+
+        if not username:
+            return request.redirect("/web")
+
+        try:
+            user = _find_or_create_user(username, email, name, is_admin=True)
+        except Exception as e:
+            logger.error("admin OIDC 사용자 처리 실패: %s", e)
+            return request.redirect("/web?oidc_error=user_create")
+
+        env = request.env(user=user.id)
+        user_context = dict(env["res.users"].context_get())
+
+        request.session.should_rotate = True
+        request.session.update({
+            "db": request.db,
+            "login": user.login,
+            "uid": user.id,
+            "context": user_context,
+            "session_token": user.sudo()._compute_session_token(request.session.sid),
+        })
+
+        logger.info("admin OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
+        return request.redirect(redirect_to)
+
+    # ── 5. iframe용 JWT 직접 로그인 (Console/Portal에서 사용) ──
     @http.route("/polyon/oidc/login", type="http", auth="none", csrf=False)
     def oidc_login(self, token=None, redirect="/web", **kwargs):
         """Console/Portal iframe에서 JWT 토큰으로 직접 로그인."""
@@ -246,9 +373,15 @@ class OIDCController(http.Controller):
 
         user = _find_or_create_user(username, email, name)
 
-        request.session.uid = user.id
-        request.session.login = user.login
-        request.session.db = request.db
-        request.session.session_token = user._compute_session_token(request.session.sid)
+        env = request.env(user=user.id)
+        user_context = dict(env["res.users"].context_get())
+        request.session.should_rotate = True
+        request.session.update({
+            "db": request.db,
+            "login": user.login,
+            "uid": user.id,
+            "context": user_context,
+            "session_token": user.sudo()._compute_session_token(request.session.sid),
+        })
 
         return request.redirect(redirect)

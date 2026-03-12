@@ -86,17 +86,24 @@ def verify_jwt(token, cfg):
 
 def _find_or_create_user(username, email, name):
     """Odoo에서 사용자를 찾거나 자동 생성한다."""
-    user_model = request.env["res.users"].sudo()
+    env = request.env
+    user_model = env["res.users"].sudo()
     user = user_model.search([("login", "=", username)], limit=1)
 
     if not user:
-        user = user_model.with_context(polyon_sync=True).create({
+        # 기본 회사 조회 (company_id NOT NULL)
+        company = env["res.company"].sudo().search([], limit=1, order="id asc")
+        company_id = company.id if company else 1
+
+        user = user_model.with_context(polyon_sync=True, no_reset_password=True).create({
             "login": username,
             "name": name or username,
             "email": email or "",
-            "group_ids": [(6, 0, [request.env.ref("base.group_user").id])],
+            "company_id": company_id,
+            "company_ids": [(4, company_id)],
+            "groups_id": [(4, env.ref("base.group_user").id)],
         })
-        logger.info("OIDC 사용자 자동 생성: %s", username)
+        logger.info("OIDC 사용자 자동 생성: %s (company_id=%s)", username, company_id)
 
     return user
 
@@ -194,7 +201,11 @@ class OIDCController(http.Controller):
             return request.redirect("/web")
 
         # 사용자 찾기/생성 + 세션 직접 설정 (Odoo 19)
-        user = _find_or_create_user(username, email, name)
+        try:
+            user = _find_or_create_user(username, email, name)
+        except Exception as e:
+            logger.error("OIDC 사용자 생성/조회 실패: %s", e)
+            return request.redirect("/web?oidc_error=user_create")
 
         request.session.uid = user.id
         request.session.login = user.login

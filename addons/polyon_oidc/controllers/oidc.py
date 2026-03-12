@@ -67,9 +67,13 @@ def get_jwks(jwks_url):
     return keys
 
 
-def verify_jwt(token, cfg):
-    """JWT를 Keycloak 공개키로 검증하고 payload를 반환한다."""
-    if not all([cfg["issuer"], cfg["client_id"], cfg["jwks_uri"]]):
+def verify_jwt(token, cfg, verify_audience=True):
+    """JWT를 Keycloak 공개키로 검증하고 payload를 반환한다.
+    
+    verify_audience=False: token-auth처럼 access_token을 직접 받는 경우
+    (KC access_token의 aud는 리소스 서버 기준이라 client_id와 다를 수 있음)
+    """
+    if not all([cfg["issuer"], cfg["jwks_uri"]]):
         raise ValueError("OIDC 환경변수 미설정")
 
     unverified_header = jwt.get_unverified_header(token)
@@ -87,12 +91,17 @@ def verify_jwt(token, cfg):
 
     public_key = RSAAlgorithm.from_jwk(json.dumps(key_data))
 
+    decode_options = {}
+    if not verify_audience:
+        decode_options["verify_aud"] = False
+
     payload = jwt.decode(
         token,
         public_key,
         algorithms=["RS256"],
         issuer=cfg["issuer"],
-        audience=cfg["client_id"],
+        audience=cfg["client_id"] if verify_audience else None,
+        options=decode_options,
     )
     return payload
 
@@ -389,7 +398,7 @@ class OIDCController(http.Controller):
         cfg = _oidc_config(admin=True)
 
         try:
-            payload = verify_jwt(token, cfg)
+            payload = verify_jwt(token, cfg, verify_audience=False)
         except Exception as e:
             logger.warning("admin token-auth JWT 검증 실패: %s", e)
             return _json({"error": "invalid token"}, 401)

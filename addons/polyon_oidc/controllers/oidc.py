@@ -19,56 +19,131 @@ logger = logging.getLogger(__name__)
 _logger = logger  # alias for compatibility
 
 
-# ── KC roles → Odoo group sync helpers ────────────────────────────────────────
+# ── KC JWT groups 클레임 → Odoo [AD Group] 동기화 헬퍼 (teps 패턴 포팅) ──────
 
-def _get_kc_roles_from_token(access_token):
-    """JWT payload에서 realm_access.roles 추출 (검증 없이 파싱)."""
+def _get_groups_from_token(access_token):
+    """JWT access_token payload에서 groups 클레임 추출 (검증 없이 파싱).
+
+    KC polyon realm에 LDAP 그룹 매퍼가 설정된 경우 groups 클레임이 포함됨.
+    - DN 형식: 'CN=Sales,OU=Groups,DC=cmars,DC=com'
+    - 이름 형식: 'Sales'
+    클레임이 없으면 빈 리스트 반환 → 동기화 skip.
+    """
     try:
         parts = access_token.split('.')
         if len(parts) < 2:
             return []
-        # Base64 padding 보정
+        # Base64 URL padding 보정
         padded = parts[1] + '=' * (4 - len(parts[1]) % 4)
         payload = json.loads(base64.b64decode(padded).decode('utf-8'))
-        return payload.get('realm_access', {}).get('roles', [])
+        groups = payload.get('groups', [])
+        return groups if isinstance(groups, list) else []
     except Exception:
         return []
 
 
-def _sync_odoo_groups_from_kc_roles(user, kc_roles):
-    """KC 역할 → Odoo group_ids 동기화 (Core API 경유).
+def _extract_cn_from_dn(dn):
+    """DN에서 CN 값 추출.
 
-    실패해도 로그인은 계속 진행된다.
+    'CN=Sales,OU=Groups,DC=cmars,DC=com' → 'Sales'
+    이미 이름 형식(= 없음)이면 그대로 반환.
     """
-    if not kc_roles:
-        return
-    core_url = os.getenv(
-        'POLYON_CORE_URL',
-        'http://polyon-core.polyon.svc.cluster.local:8000'
-    )
+    if not dn:
+        return None
+    if '=' not in dn:
+        return dn  # 이미 이름 형식
+    for part in dn.split(','):
+        part = part.strip()
+        if part.upper().startswith('CN='):
+            return part[3:]
+    return None
+
+
+def _get_or_create_odoo_group(env, group_name):
+    """Odoo에서 그룹 검색. 없으면 [AD Group] 마커로 신규 생성.
+
+    teps _get_or_create_odoo_group() 패턴.
+    """
+    ResGroups = env['res.groups'].sudo()
+
+    # 대소문자 무관 검색
+    existing = ResGroups.search([('name', '=ilike', group_name)], limit=1)
+    if existing:
+        _logger.debug("Found existing group: %s (id=%d)", group_name, existing.id)
+        return existing.id
+
+    # 신규 생성 — comment에 [AD Group] 마커 삽입 (teps 패턴)
     try:
-        resp = requests.get(
-            f'{core_url}/api/v1/appengine/role-mappings',
-            timeout=5
-        )
-        if resp.status_code != 200:
-            _logger.warning("Group sync: Core API returned %s", resp.status_code)
-            return
-        mappings = resp.json().get('mappings', [])
-
-        # KC 역할에 매핑된 Odoo group_ids 수집
-        group_ids = set()
-        for mapping in mappings:
-            if mapping.get('kc_role') in kc_roles:
-                raw = mapping.get('odoo_group_ids', [])
-                if isinstance(raw, list):
-                    group_ids.update(int(gid) for gid in raw if gid)
-
-        if group_ids:
-            user.sudo().write({'group_ids': [(6, 0, list(group_ids))]})
-            _logger.info("Synced Odoo groups for user %s: %s", user.login, group_ids)
+        new_group = ResGroups.create({
+            'name': group_name,
+            'comment': f'[AD Group] KC OIDC에서 자동 생성',
+        })
+        _logger.info("Created [AD Group]: %s (id=%d)", group_name, new_group.id)
+        return new_group.id
     except Exception as e:
-        _logger.warning("Group sync failed for %s: %s", getattr(user, 'login', '?'), e)
+        _logger.error("Group create failed for %s: %s", group_name, e)
+        return None
+
+
+def _update_user_ad_groups(user, new_group_ids):
+    """사용자의 [AD Group] 계열 그룹만 갱신. 기타 그룹(권한 등)은 유지.
+
+    teps _update_user_ad_groups() 패턴.
+    """
+    # [AD Group] 마커가 있는 현재 그룹만 대상
+    current_ad_groups = user.group_ids.filtered(
+        lambda g: g.comment and '[AD Group]' in g.comment
+    )
+
+    commands = []
+    # 새 목록에 없는 기존 AD 그룹 제거
+    for group in current_ad_groups:
+        if group.id not in new_group_ids:
+            commands.append((3, group.id))
+    # 새 그룹 추가 (현재 없는 것만)
+    current_ids = set(user.group_ids.ids)
+    for gid in new_group_ids:
+        if gid not in current_ids:
+            commands.append((4, gid))
+
+    if commands:
+        user.sudo().write({'group_ids': commands})
+        removed = sum(1 for c in commands if c[0] == 3)
+        added = sum(1 for c in commands if c[0] == 4)
+        _logger.debug("Updated AD groups for %s: -%d +%d", user.login, removed, added)
+
+
+def _sync_odoo_groups_from_kc_groups(user, groups_claim):
+    """KC JWT groups 클레임 → Odoo [AD Group] 동기화.
+
+    - groups_claim 이 비어 있으면(KC 매퍼 미설정 등) 동기화 skip
+    - DN/이름 형식 모두 처리
+    - 실패해도 로그인은 계속 진행
+
+    teps _sync_ad_groups_for_user() 패턴 기반.
+    """
+    if not groups_claim:
+        return  # groups 클레임 없음 → KC 매퍼 미설정, skip
+
+    env = user.env
+    new_group_ids = set()
+
+    for g in groups_claim:
+        cn = _extract_cn_from_dn(g)
+        if not cn:
+            continue
+        gid = _get_or_create_odoo_group(env, cn)
+        if gid:
+            new_group_ids.add(gid)
+
+    try:
+        _update_user_ad_groups(user, new_group_ids)
+        _logger.info(
+            "KC group sync completed for %s: %d groups (%s)",
+            user.login, len(new_group_ids), list(new_group_ids)
+        )
+    except Exception as e:
+        _logger.warning("KC group sync failed for %s: %s", user.login, e)
 
 _jwks_cache = {}
 _JWKS_TTL = 3600  # 1시간
@@ -307,10 +382,10 @@ class OIDCController(http.Controller):
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
 
-        # KC access_token에서 realm_access.roles 추출 후 Odoo 그룹 동기화
+        # KC access_token에서 groups 클레임 추출 후 Odoo [AD Group] 동기화
         access_token = tokens.get("access_token", "")
-        kc_roles = _get_kc_roles_from_token(access_token)
-        _sync_odoo_groups_from_kc_roles(user, kc_roles)
+        kc_groups = _get_groups_from_token(access_token)
+        _sync_odoo_groups_from_kc_groups(user, kc_groups)
 
         logger.info("OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
@@ -415,10 +490,10 @@ class OIDCController(http.Controller):
             "session_token": user.sudo()._compute_session_token(request.session.sid),
         })
 
-        # KC access_token에서 realm_access.roles 추출 후 Odoo 그룹 동기화
+        # KC access_token에서 groups 클레임 추출 후 Odoo [AD Group] 동기화
         access_token = tokens.get("access_token", "")
-        kc_roles = _get_kc_roles_from_token(access_token)
-        _sync_odoo_groups_from_kc_roles(user, kc_roles)
+        kc_groups = _get_groups_from_token(access_token)
+        _sync_odoo_groups_from_kc_groups(user, kc_groups)
 
         logger.info("admin OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
@@ -529,3 +604,106 @@ class OIDCController(http.Controller):
         })
 
         return request.redirect(redirect)
+
+    # ── 7. 내부 그룹 재동기화 — Core API에서 호출 ──────────────────────────────
+    @http.route("/polyon/oidc/internal/group-sync", type="http", auth="none", methods=["POST"], csrf=False)
+    def internal_group_sync(self, **kwargs):
+        """내부 전용 — Core API가 호출하여 모든 Odoo 사용자의 KC 그룹 재동기화.
+
+        KC Admin API로 각 사용자의 그룹을 조회하고 Odoo [AD Group] 동기화.
+        cluster 내부에서만 호출 가능 (인증 없음).
+        """
+        from werkzeug.wrappers import Response as WerkzeugResponse
+
+        def _json(data, status=200):
+            return WerkzeugResponse(
+                json.dumps(data), status=status, content_type="application/json"
+            )
+
+        kc_url = os.getenv("KC_INTERNAL_URL", "http://polyon-auth.polyon.svc.cluster.local:8080")
+        kc_admin_password = os.getenv("KC_ADMIN_PASSWORD", "")
+
+        if not kc_admin_password:
+            logger.error("internal_group_sync: KC_ADMIN_PASSWORD not set")
+            return _json({"error": "KC_ADMIN_PASSWORD not configured"}, 500)
+
+        # KC Admin 토큰 획득
+        try:
+            token_resp = requests.post(
+                f"{kc_url}/realms/master/protocol/openid-connect/token",
+                data={
+                    "grant_type": "password",
+                    "client_id": "admin-cli",
+                    "username": "admin",
+                    "password": kc_admin_password,
+                },
+                timeout=10,
+            )
+            token_resp.raise_for_status()
+            admin_token = token_resp.json().get("access_token", "")
+        except Exception as e:
+            logger.error("internal_group_sync: KC admin token failed: %s", e)
+            return _json({"error": "KC admin token failed"}, 500)
+
+        kc_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # Odoo 사용자 목록 (admin/system 제외)
+        env = request.env
+        excluded = ["admin", "__system__", "OdooBot", "public"]
+        users = env["res.users"].sudo().search([
+            ("active", "=", True),
+            ("login", "not in", excluded),
+        ])
+
+        synced = 0
+        skipped = 0
+        errors = 0
+
+        for user in users:
+            try:
+                # KC에서 사용자 검색
+                search_resp = requests.get(
+                    f"{kc_url}/admin/realms/polyon/users",
+                    params={"username": user.login, "exact": "true", "max": 1},
+                    headers=kc_headers,
+                    timeout=5,
+                )
+                if search_resp.status_code != 200:
+                    skipped += 1
+                    continue
+
+                kc_users = search_resp.json()
+                if not kc_users:
+                    skipped += 1
+                    continue
+
+                kc_user_id = kc_users[0].get("id")
+                if not kc_user_id:
+                    skipped += 1
+                    continue
+
+                # KC 사용자 그룹 조회
+                groups_resp = requests.get(
+                    f"{kc_url}/admin/realms/polyon/users/{kc_user_id}/groups",
+                    headers=kc_headers,
+                    timeout=5,
+                )
+                if groups_resp.status_code != 200:
+                    skipped += 1
+                    continue
+
+                kc_groups = groups_resp.json()
+                group_names = [g.get("name", "") for g in kc_groups if g.get("name")]
+
+                _sync_odoo_groups_from_kc_groups(user, group_names)
+                synced += 1
+
+            except Exception as e:
+                logger.warning("internal_group_sync: error for %s: %s", user.login, e)
+                errors += 1
+
+        logger.info(
+            "internal_group_sync completed: synced=%d skipped=%d errors=%d",
+            synced, skipped, errors
+        )
+        return _json({"synced": synced, "skipped": skipped, "errors": errors})

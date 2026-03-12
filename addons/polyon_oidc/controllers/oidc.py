@@ -350,7 +350,78 @@ class OIDCController(http.Controller):
         logger.info("admin OIDC 로그인 성공: %s (uid=%s)", user.login, user.id)
         return request.redirect(redirect_to)
 
-    # ── 5. iframe용 JWT 직접 로그인 (Console/Portal에서 사용) ──
+    # ── 5. Console admin token-auth — Bearer JWT → Odoo 세션 (CORS) ──
+    @http.route("/polyon/oidc/admin/token-auth", type="http", auth="none", methods=["POST", "OPTIONS"], csrf=False)
+    def admin_token_auth(self, **kwargs):
+        """Console이 admin realm access_token으로 Odoo 세션을 직접 생성.
+
+        CORS: console.cmars.com → apps.cmars.com cross-origin 허용.
+        Console에서 이미 KC admin realm 인증이 된 상태이므로 재인증 불필요.
+        """
+        from werkzeug.wrappers import Response as WerkzeugResponse
+
+        origin = request.httprequest.headers.get("Origin", "")
+        ALLOWED_ORIGINS = ["https://console.cmars.com"]
+
+        def _cors(resp):
+            if origin in ALLOWED_ORIGINS:
+                resp.headers["Access-Control-Allow-Origin"] = origin
+                resp.headers["Access-Control-Allow-Credentials"] = "true"
+                resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+                resp.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+                resp.headers["Vary"] = "Origin"
+            return resp
+
+        def _json(data, status=200):
+            return _cors(WerkzeugResponse(
+                json.dumps(data), status=status, content_type="application/json"
+            ))
+
+        # CORS preflight
+        if request.httprequest.method == "OPTIONS":
+            return _cors(WerkzeugResponse(status=204))
+
+        auth_header = request.httprequest.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return _json({"error": "no token"}, 401)
+
+        token = auth_header[7:]
+        cfg = _oidc_config(admin=True)
+
+        try:
+            payload = verify_jwt(token, cfg)
+        except Exception as e:
+            logger.warning("admin token-auth JWT 검증 실패: %s", e)
+            return _json({"error": "invalid token"}, 401)
+
+        username = payload.get("preferred_username", "")
+        email = payload.get("email", "")
+        name = payload.get("name", "") or username
+
+        if not username:
+            return _json({"error": "no username"}, 400)
+
+        try:
+            user = _find_or_create_user(username, email, name, is_admin=True)
+        except Exception as e:
+            logger.error("admin token-auth 사용자 처리 실패: %s", e)
+            return _json({"error": "user create failed"}, 500)
+
+        env = request.env(user=user.id)
+        user_context = dict(env["res.users"].context_get())
+        request.session.should_rotate = True
+        request.session.update({
+            "db": request.db,
+            "login": user.login,
+            "uid": user.id,
+            "context": user_context,
+            "session_token": user.sudo()._compute_session_token(request.session.sid),
+        })
+
+        logger.info("admin token-auth 로그인 성공: %s (uid=%s)", user.login, user.id)
+        return _json({"status": "ok", "uid": user.id})
+
+    # ── 6. iframe용 JWT 직접 로그인 (Console/Portal에서 사용) ──
     @http.route("/polyon/oidc/login", type="http", auth="none", csrf=False)
     def oidc_login(self, token=None, redirect="/web", **kwargs):
         """Console/Portal iframe에서 JWT 토큰으로 직접 로그인."""

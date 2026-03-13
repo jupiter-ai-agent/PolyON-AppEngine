@@ -45,3 +45,5 @@ jobs:
           push: true
           tags: |
             jupitertriangles/polyon-appengine:v${{ steps.version.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

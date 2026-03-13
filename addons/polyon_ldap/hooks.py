@@ -41,6 +41,12 @@ def post_init_hook(env):
         "ldap_filter": "(&(objectClass=user)(sAMAccountName=%s))",
         # 사용자 자동 생성 — LDAP/OIDC 로그인 시 res.users에 자동 프로비저닝
         "create_user": True,
+        # LDAP 사용자 자동 import 설정
+        "import_enabled": True,
+        "import_interval": 60,   # 60분 주기
+        "import_on_startup": True,  # 시작 시 1회 즉시 import
+        "update_existing_users": True,
+        "user_deletion_strategy": "deactivate",
     }
 
     # teps_odoo_ldap_connector 필드 (모듈 설치된 경우에만 적용)

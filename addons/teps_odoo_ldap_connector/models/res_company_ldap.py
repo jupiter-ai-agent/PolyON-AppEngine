@@ -256,8 +256,8 @@ class ResCompanyLdap(models.Model):
         사용자 생성/조회 후 AD 그룹 동기화 수행
         원본 메서드를 오버라이드하여 그룹 동기화 로직 추가
         """
-        # 원본 메서드 호출하여 사용자 ID 획득
-        user_id = super()._get_or_create_user(conf, login, ldap_entry)
+        # polyon_sync context로 사용자 생성 잠금 해제
+        user_id = super(ResCompanyLdap, self.with_context(polyon_sync=True))._get_or_create_user(conf, login, ldap_entry)
 
         if user_id:
             try:
@@ -587,6 +587,7 @@ class ResCompanyLdap(models.Model):
     def _cron_import_ldap_users(self):
         """
         Cron Job: 모든 활성화된 LDAP 서버에서 사용자 가져오기
+        polyon_sync=True context로 실행하여 사용자 생성/수정 잠금 해제
         """
         ldap_configs = self.sudo().search([
             ('import_enabled', '=', True),
@@ -594,7 +595,7 @@ class ResCompanyLdap(models.Model):
 
         for config in ldap_configs:
             try:
-                config._import_ldap_users()
+                config.with_context(polyon_sync=True)._import_ldap_users()
             except Exception as e:
                 _logger.error(
                     "LDAP import cron failed for server %s: %s",

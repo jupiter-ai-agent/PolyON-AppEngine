@@ -233,7 +233,12 @@ class LdapSyncWizard(models.Model):
         - 선택된 그룹 → 동기화
         - 선택 안 된 AD 그룹 → 멤버십 제거
         위자드 데이터는 유지됨 (persistent)
+        polyon_sync=True context로 실행하여 polyon_ldap 보안 정책 우회
         """
+        # polyon_sync=True context 없이 호출된 경우 자동으로 감싸서 재실행
+        if not self.env.context.get('polyon_sync'):
+            return self.with_context(polyon_sync=True).action_sync_selected()
+
         self.ensure_one()
         ldap_config = self.ldap_id
 

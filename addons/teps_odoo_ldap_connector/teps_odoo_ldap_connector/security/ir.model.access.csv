@@ -1,0 +1,9 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_res_company_ldap_manager,res.company.ldap manager,auth_ldap.model_res_company_ldap,base.group_system,1,1,1,1
+access_ldap_test_users_wizard,ldap.test.users.wizard,model_ldap_test_users_wizard,base.group_system,1,1,1,1
+access_ldap_test_users_wizard_line,ldap.test.users.wizard.line,model_ldap_test_users_wizard_line,base.group_system,1,1,1,1
+access_ldap_test_groups_wizard,ldap.test.groups.wizard,model_ldap_test_groups_wizard,base.group_system,1,1,1,1
+access_ldap_test_groups_wizard_line,ldap.test.groups.wizard.line,model_ldap_test_groups_wizard_line,base.group_system,1,1,1,1
+access_ldap_sync_wizard,ldap.sync.wizard,model_ldap_sync_wizard,base.group_system,1,1,1,1
+access_ldap_sync_wizard_user_line,ldap.sync.wizard.user.line,model_ldap_sync_wizard_user_line,base.group_system,1,1,1,1
+access_ldap_sync_wizard_group_line,ldap.sync.wizard.group.line,model_ldap_sync_wizard_group_line,base.group_system,1,1,1,1

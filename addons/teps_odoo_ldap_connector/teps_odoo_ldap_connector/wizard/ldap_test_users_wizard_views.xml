@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Test LDAP Users Wizard Form View -->
+    <record id="ldap_test_users_wizard_form" model="ir.ui.view">
+        <field name="name">ldap.test.users.wizard.form</field>
+        <field name="model">ldap.test.users.wizard</field>
+        <field name="arch" type="xml">
+            <form string="LDAP">
+                <div class="mb-3">
+                    <h4>Test LDAP Users</h4>
+                    <p class="text-muted">A subset of users has been displayed for you to review.</p>
+                </div>
+
+                <field name="line_ids" nolabel="1">
+                    <list editable="bottom" create="false" delete="false">
+                        <field name="screen_name" string="Screen Name" readonly="1"/>
+                        <field name="email" string="Email Address" readonly="1"/>
+                        <field name="first_name" string="First Name" readonly="1"/>
+                        <field name="last_name" string="Last Name" readonly="1"/>
+                        <field name="job_title" string="Job Title" readonly="1"/>
+                        <field name="group_count" string="Groups" readonly="1"/>
+                        <field name="is_complete" column_invisible="1"/>
+                    </list>
+                </field>
+
+                <div class="alert alert-warning mt-3" invisible="not has_incomplete_users">
+                    <i class="fa fa-exclamation-triangle me-1"/>
+                    The above results include users which are missing the required attributes
+                    (Screen Name, Email Address, First Name, and Last Name).
+                    These users will not be imported until these attributes are filled in.
+                </div>
+
+                <footer>
+                    <button string="Close" class="btn-secondary" special="cancel"/>
+                </footer>
+            </form>
+        </field>
+    </record>
+
+</odoo>

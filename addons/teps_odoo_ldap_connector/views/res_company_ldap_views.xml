@@ -10,6 +10,11 @@
             <!-- sequence 필드 숨기기 -->
             <xpath expr="//field[@name='sequence']" position="replace"/>
 
+            <!-- 포트 번호 천단위 구분자 제거 -->
+            <xpath expr="//field[@name='ldap_server_port']" position="attributes">
+                <attribute name="options">{'format': false}</attribute>
+            </xpath>
+
             <!-- user 필드 옵션 설정 (생성/열기 비활성화) -->
             <xpath expr="//field[@name='user']" position="attributes">
                 <attribute name="options">{'no_create': True, 'no_open': True}</attribute>
@@ -34,13 +39,12 @@
                         type="object"
                         class="btn-secondary"
                         icon="fa-users"/>
-                <button name="action_sync_all_users"
-                        string="Sync All Groups &amp; Users"
+                <button name="action_open_sync_wizard"
+                        string="Sync Users &amp; Groups"
                         type="object"
                         class="btn-secondary"
                         invisible="not sync_groups"
-                        icon="fa-refresh"
-                        confirm="This will sync AD groups for all active users. Continue?"/>
+                        icon="fa-refresh"/>
             </xpath>
 
             <!-- Liferay 스타일 Users & Groups 섹션 -->
@@ -112,40 +116,17 @@
                 </group>
 
                 <!-- ========================================== -->
-                <!-- AUTO IMPORT 섹션                           -->
+                <!-- SYNC STATUS 섹션                          -->
                 <!-- ========================================== -->
-                <separator string="AUTO IMPORT"/>
-
-                <div class="alert alert-info p-2 mb-3" role="alert" style="font-size: 0.85em;">
-                    <i class="fa fa-info-circle me-1"/>
-                    LDAP 서버에서 주기적으로 사용자를 가져오고 AD 그룹 멤버십을 동기화합니다.
-                    LDAP에서 삭제된 사용자는 삭제 정책에 따라 처리됩니다.
-                </div>
+                <separator string="SYNC STATUS"/>
 
                 <group col="2">
                     <group>
-                        <field name="import_enabled"/>
-                        <label for="import_interval" invisible="not import_enabled"/>
-                        <div invisible="not import_enabled" class="o_row">
-                            <field name="import_interval" nolabel="1" style="width: 80px;"/>
-                            <span>minutes</span>
-                        </div>
-                        <field name="import_on_startup" invisible="not import_enabled"/>
-                        <field name="update_existing_users" invisible="not import_enabled"/>
-                        <field name="user_deletion_strategy" invisible="not import_enabled"/>
-                    </group>
-                    <group/>
-                </group>
-
-                <!-- SYNC STATUS 서브섹션 -->
-                <separator string="SYNC STATUS" invisible="not import_enabled"/>
-                <group col="2" invisible="not import_enabled">
-                    <group>
                         <field name="last_sync_date" readonly="1"/>
-                        <field name="last_sync_user_count" readonly="1"/>
+                        <field name="last_sync_status" readonly="1"/>
                     </group>
                     <group>
-                        <field name="last_sync_status" readonly="1"/>
+                        <field name="last_sync_user_count" readonly="1"/>
                     </group>
                 </group>
 

@@ -4,7 +4,7 @@
     "category": "Authentication",
     "summary": "PRC directory 환경변수로 Samba AD LDAP 설정 자동화",
     "author": "Triangle.s",
-    "depends": ["base", "auth_ldap", "teps_odoo_ldap_connector"],
+    "depends": ["base", "auth_ldap", "polyon_ldap_connector"],
     "post_init_hook": "post_init_hook",
     "installable": True,
     "auto_install": False,

@@ -44,6 +44,7 @@ Active Directory 그룹을 Odoo 그룹으로 자동 동기화하는 모듈입니
         'data/ldap_cron.xml',
         'wizard/ldap_test_users_wizard_views.xml',
         'wizard/ldap_test_groups_wizard_views.xml',
+        'wizard/ldap_sync_wizard_views.xml',
         'views/res_company_ldap_views.xml',
         'views/res_groups_views.xml',
         'views/res_users_views.xml',
@@ -53,7 +54,8 @@ Active Directory 그룹을 Odoo 그룹으로 자동 동기화하는 모듈입니
             'teps_odoo_ldap_connector/static/src/css/ldap_form.css',
         ],
     },
+    'post_init_hook': '_post_init_update_cron',
     'installable': True,
-    'application': False,
+    'application': True,
     'auto_install': False,
 }

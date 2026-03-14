@@ -181,83 +181,13 @@ class ResCompanyLdap(models.Model):
     # =========================================================================
     # Override Methods
     # =========================================================================
-    def _get_ldap_dicts(self):
-        """
-        auth_search_filter 필드를 conf 딕셔너리에 포함하여 반환.
-        Odoo 기본 _get_ldap_dicts()는 ldap_filter만 포함하므로 확장 필요.
-        """
-        configs = super()._get_ldap_dicts()
-        if not configs:
-            return configs
-
-        # id → conf 매핑
-        config_map = {c['id']: c for c in configs}
-        records = self.sudo().browse(list(config_map.keys()))
-        for record in records:
-            if record.id in config_map:
-                config_map[record.id]['auth_search_filter'] = record.auth_search_filter or False
-
-        return configs
-
-    def _get_entry(self, conf, login):
-        """
-        AD Bind 방식 인증용 DN 검색.
-        auth_search_filter가 설정된 경우 기본 ldap_filter 대신 사용.
-
-        지원 형식:
-        - %(user)s  — sAMAccountName=%(user)s 처럼 named placeholder
-        - %s        — 기본 Odoo 방식 (filter_format 사용, 자동 이스케이프)
-        auth_search_filter 미설정 시 Odoo 기본 동작(_get_entry) 그대로.
-        """
-        auth_filter = conf.get('auth_search_filter')
-        if not auth_filter:
-            return super()._get_entry(conf, login)
-
-        from ldap.filter import escape_filter_chars, filter_format
-
-        if '%(user)s' in auth_filter:
-            # named placeholder 형식 — 직접 이스케이프
-            escaped_login = escape_filter_chars(login)
-            formatted_filter = auth_filter % {'user': escaped_login}
-        elif '%s' in auth_filter:
-            # positional placeholder — filter_format(이스케이프 내장)
-            placeholders = auth_filter.count('%s')
-            formatted_filter = filter_format(auth_filter, [login] * placeholders)
-        else:
-            # 플레이스홀더 없음 (고정 필터) — 그대로 사용
-            _logger.warning(
-                "auth_search_filter %r contains no placeholder (%%s or %%(user)s). "
-                "All users matching this filter will be returned.",
-                auth_filter,
-            )
-            formatted_filter = auth_filter
-
-        _logger.debug(
-            "AD bind search: base=%s filter=%s", conf.get('ldap_base'), formatted_filter
-        )
-
-        results = self._query(conf, formatted_filter)
-        results = [entry for entry in results if entry[0]]
-
-        dn, entry = False, False
-        if len(results) == 1:
-            dn, _ = entry = results[0]
-        elif len(results) > 1:
-            _logger.warning(
-                "auth_search_filter returned %d results for login %r — expected exactly 1. "
-                "Authentication denied.",
-                len(results), login,
-            )
-
-        return dn, entry
-
     def _get_or_create_user(self, conf, login, ldap_entry):
         """
         사용자 생성/조회 후 AD 그룹 동기화 수행
         원본 메서드를 오버라이드하여 그룹 동기화 로직 추가
         """
-        # polyon_sync context로 사용자 생성 잠금 해제
-        user_id = super(ResCompanyLdap, self.with_context(polyon_sync=True))._get_or_create_user(conf, login, ldap_entry)
+        # 원본 메서드 호출하여 사용자 ID 획득
+        user_id = super()._get_or_create_user(conf, login, ldap_entry)
 
         if user_id:
             try:
@@ -587,7 +517,6 @@ class ResCompanyLdap(models.Model):
     def _cron_import_ldap_users(self):
         """
         Cron Job: 모든 활성화된 LDAP 서버에서 사용자 가져오기
-        polyon_sync=True context로 실행하여 사용자 생성/수정 잠금 해제
         """
         ldap_configs = self.sudo().search([
             ('import_enabled', '=', True),
@@ -595,7 +524,7 @@ class ResCompanyLdap(models.Model):
 
         for config in ldap_configs:
             try:
-                config.with_context(polyon_sync=True)._import_ldap_users()
+                config._import_ldap_users()
             except Exception as e:
                 _logger.error(
                     "LDAP import cron failed for server %s: %s",

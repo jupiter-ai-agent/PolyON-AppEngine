@@ -1,0 +1,13 @@
+/* PolyON LDAP Connector - Form Styling */
+
+/* LDAP 설정 폼의 Input 박스 배경색 */
+.o_form_view .o_field_widget input[type="text"],
+.o_form_view .o_field_widget textarea {
+    background-color: #f5f5f5;
+}
+
+/* Focus 시 약간 더 밝게 */
+.o_form_view .o_field_widget input[type="text"]:focus,
+.o_form_view .o_field_widget textarea:focus {
+    background-color: #ffffff;
+}

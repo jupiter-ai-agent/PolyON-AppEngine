@@ -7,7 +7,7 @@ COPY addons/ ${ODOO_HOME}/addons-custom/
 COPY config/ /etc/odoo/
 COPY polyon-module/ /polyon-module/
 COPY --chmod=755 entrypoint.sh /entrypoint.sh
-RUN sed -i "s/odoo_initial_modules=\".*\"/odoo_initial_modules=\"base,auth_ldap,auth_oauth,polyon_s3_attachment,polyon_oidc,polyon_iframe,teps_odoo_ldap_connector,polyon_ldap\"/g" /entrypoint.sh
+RUN sed -i "s/odoo_initial_modules=\".*\"/odoo_initial_modules=\"base,auth_ldap,auth_oauth,polyon_s3_attachment,polyon_oidc,polyon_iframe,polyon_ldap_connector,polyon_ldap\"/g" /entrypoint.sh
 
 COPY scripts/ /usr/local/bin/
 

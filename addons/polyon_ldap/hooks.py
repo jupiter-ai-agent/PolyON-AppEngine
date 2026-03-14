@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 def post_init_hook(env):
     """PRC directory 환경변수에서 LDAP 설정을 읽어 res.company.ldap 레코드를 생성한다.
-    teps_odoo_ldap_connector 필드 포함 (AD 사용자/그룹 자동 동기화).
+    polyon_ldap_connector 필드 포함 (AD 사용자/그룹 자동 동기화).
     """
     ldap_host = os.getenv("LDAP_HOST", "")
     ldap_port = int(os.getenv("LDAP_PORT", "389"))
@@ -49,7 +49,7 @@ def post_init_hook(env):
         "user_deletion_strategy": "deactivate",
     }
 
-    # teps_odoo_ldap_connector 필드 (모듈 설치된 경우에만 적용)
+    # polyon_ldap_connector 필드 (모듈 설치된 경우에만 적용)
     teps_fields = {}
     if "users_dn" in ldap_model._fields:
         teps_fields.update({

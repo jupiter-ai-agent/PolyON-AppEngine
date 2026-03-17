@@ -380,7 +380,7 @@ class OIDCController(http.Controller):
         try:
             user = _find_or_create_user(username, email, name)
         except Exception as e:
-            logger.error("OIDC 사용자 생성/조회 실패: %s", e)
+            logger.error("OIDC 사용자 생성/조회 실패: %s", e, exc_info=True)
             return request.redirect("/web?oidc_error=user_create")
 
         # Odoo 19 세션 설정 — session.finalize() 방식과 동일하게
@@ -488,7 +488,7 @@ class OIDCController(http.Controller):
         try:
             user = _find_or_create_user(username, email, name, is_admin=True)
         except Exception as e:
-            logger.error("admin OIDC 사용자 처리 실패: %s", e)
+            logger.error("admin OIDC 사용자 처리 실패: %s", e, exc_info=True)
             return request.redirect("/web?oidc_error=user_create")
 
         env = request.env(user=user.id)

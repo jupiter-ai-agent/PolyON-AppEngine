@@ -54,12 +54,14 @@ class LdapSyncWizard(models.Model):
             wizard.sync_user_count = len(wizard.user_line_ids.filtered('is_sync_target'))
             wizard.selected_group_count = len(wizard.group_line_ids.filtered('selected'))
 
-    def create(self, vals):
+    @api.model_create_multi
+    def create(self, vals_list):
         """wizard 생성 시 sync_enabled 기본값(False)에 맞게 cron 비활성화"""
-        record = super().create(vals)
+        records = super().create(vals_list)
         # 새 wizard가 sync_enabled=False이면 cron을 비활성화
-        record._update_cron_interval()
-        return record
+        for record in records:
+            record._update_cron_interval()
+        return records
 
     def write(self, vals):
         """sync_enabled/sync_interval 변경 시 cron 간격도 동기화"""
